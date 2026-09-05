@@ -1,4 +1,4 @@
-import { assertEquals } from "jsr:@std/assert@^1.0.0";
+import { assertEquals } from "@std/assert";
 import { type ErroValor, formatarBRL, pareceValor, parseValor } from "./money.ts";
 
 const validos: Array<[string, number]> = [
