@@ -20,6 +20,11 @@ export const PAGINA_EXTRATO = 10;
  */
 export const MAX_DESCRICAO = 80;
 export const MAX_QUEM = 32;
+/**
+ * O eco de `erroValor` existe só para mostrar o que o bot leu; 40 chars
+ * bastam para reconhecer a própria entrada.
+ */
+export const MAX_ENTRADA_ECO = 40;
 
 function truncar(texto: string, max: number): string {
   // Itera por code point (não por unidade UTF-16) para nunca partir um
@@ -100,7 +105,7 @@ const MOTIVOS: Record<ErroValor, string> = {
 export function erroValor(entrada: string, erro: ErroValor): Mensagem {
   return {
     text: [
-      `❌ "${entrada}" — ${MOTIVOS[erro]}`,
+      `❌ "${truncar(entrada, MAX_ENTRADA_ECO)}" — ${MOTIVOS[erro]}`,
       "",
       "Manda de novo — aceito assim:",
       "   50        50,90       1.234,56",
@@ -145,7 +150,7 @@ export function textoExtrato(ls: Lancamento[], offset: number, temMais: boolean)
   if (ls.length === 0) {
     return { text: "Ainda não há nenhum lançamento registrado." };
   }
-  const linhas = ls.map((l) =>
+  const linhas = ls.slice(0, PAGINA_EXTRATO).map((l) =>
     `${ddMM(l.data)}  ${SETA[l.tipo]} ${formatarBRL(l.centavos).padStart(10)}  ${
       l.descricao ? truncar(l.descricao, MAX_DESCRICAO) : "—"
     }  ·  ${truncar(l.quem, MAX_QUEM)}`

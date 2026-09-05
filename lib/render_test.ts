@@ -7,7 +7,9 @@ import {
   extrairLinha,
   linkWhatsApp,
   MAX_DESCRICAO,
+  MAX_ENTRADA_ECO,
   MAX_QUEM,
+  PAGINA_EXTRATO,
   perguntaDescricao,
   perguntaTipo,
   textoExtrato,
@@ -191,7 +193,7 @@ Deno.test("textoExtrato com dez linhas de descrição E nome em emoji fica abaix
   // dois, a medição do revisor deu 4469 caracteres — acima de 4096 — mesmo
   // com `descricao` já truncada, porque o excesso vinha inteiro de `quem`.
   const descricaoEmEmoji = "😀".repeat(100); // bem acima de MAX_DESCRICAO
-  const quemEmEmoji = "🎉".repeat(50); // bem acima de MAX_QUEM
+  const quemEmEmoji = "🎉".repeat(110); // bem acima de MAX_QUEM; sem o clamp, 10 dessas linhas já passam de 4096
   const dez: Lancamento[] = Array.from(
     { length: 10 },
     () => ({ ...lanc, descricao: descricaoEmEmoji, quem: quemEmEmoji }),
@@ -202,5 +204,34 @@ Deno.test("textoExtrato com dez linhas de descrição E nome em emoji fica abaix
   assert(
     m.text.length < 4096,
     `textoExtrato com 10 linhas (descrição e nome em emoji) produziu ${m.text.length} caracteres, limite do Telegram é 4096`,
+  );
+});
+
+const entradaLonga = "9".repeat(4096);
+const ecoTruncado = entradaLonga.slice(0, MAX_ENTRADA_ECO) + "…";
+
+Deno.test("erroValor trunca o eco de uma entrada muito longa", () => {
+  assertEquals(ecoTruncado.length, MAX_ENTRADA_ECO + 1);
+
+  const m = erroValor(entradaLonga, "formato");
+  assertStringIncludes(m.text, ecoTruncado);
+  assert(!m.text.includes(entradaLonga));
+  assert(
+    m.text.length < 4096,
+    `erroValor com entrada de ${entradaLonga.length} caracteres produziu texto com ${m.text.length} caracteres, limite do Telegram é 4096`,
+  );
+});
+
+Deno.test("textoExtrato se autolimita a PAGINA_EXTRATO mesmo recebendo mais linhas", () => {
+  // Pior caso por linha: descrição e nome no teto (antes do truncamento) em
+  // emoji astral, para que o comprimento renderizado seja o maior possível.
+  const piorCaso: Lancamento = { ...lanc, descricao: "😀".repeat(100), quem: "🎉".repeat(110) };
+  const vinteECinco: Lancamento[] = Array.from({ length: 25 }, () => ({ ...piorCaso }));
+
+  const m = textoExtrato(vinteECinco, 0, false);
+  assertEquals(m.text.split("\n").length, PAGINA_EXTRATO);
+  assert(
+    m.text.length < 4096,
+    `textoExtrato com 25 linhas de pior caso produziu ${m.text.length} caracteres, limite do Telegram é 4096`,
   );
 });
