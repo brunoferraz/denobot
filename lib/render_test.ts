@@ -229,7 +229,12 @@ Deno.test("textoExtrato se autolimita a PAGINA_EXTRATO mesmo recebendo mais linh
   const vinteECinco: Lancamento[] = Array.from({ length: 25 }, () => ({ ...piorCaso }));
 
   const m = textoExtrato(vinteECinco, 0, false);
-  assertEquals(m.text.split("\n").length, PAGINA_EXTRATO);
+  // conta linhas de LANÇAMENTO (as que têm bolinha), não linhas do texto — o
+  // rodapé de totais também ocupa linhas e não deve entrar nesta contagem.
+  assertEquals(
+    m.text.split("\n").filter((l) => l.includes("🟢") || l.includes("🔴")).length,
+    PAGINA_EXTRATO,
+  );
   assert(
     m.text.length < 4096,
     `textoExtrato com 25 linhas de pior caso produziu ${m.text.length} caracteres, limite do Telegram é 4096`,
@@ -309,4 +314,60 @@ Deno.test("ícones: o 'Ver mais' continua sendo seta para baixo", () => {
     inline_keyboard: Array<Array<{ text: string }>>;
   }).inline_keyboard;
   assertStringIncludes(kb[0][0].text, "\u2B07\uFE0F");
+});
+
+Deno.test("extrato traz rodapé com entradas, saídas e líquido dos exibidos", () => {
+  const d = lanc.data;
+  const m = textoExtrato(
+    [
+      { data: d, tipo: "Saída", centavos: 20000, descricao: "mercado", quem: "Bruno" },
+      { data: d, tipo: "Entrada", centavos: 15000, descricao: "salário", quem: "Bruno" },
+      { data: d, tipo: "Entrada", centavos: 123456, descricao: "salário", quem: "Bruno" },
+    ],
+    0,
+    false,
+  );
+
+  assertStringIncludes(m.text, "Entradas");
+  assertStringIncludes(m.text, "1.384,56");
+  assertStringIncludes(m.text, "Saídas");
+  assertStringIncludes(m.text, "200,00");
+  assertStringIncludes(m.text, "➕ Líquido");
+  assertStringIncludes(m.text, "1.184,56");
+});
+
+Deno.test("o rodapé conta só as linhas exibidas, não as recebidas", () => {
+  // textoExtrato corta em PAGINA_EXTRATO; somar antes do corte faria o rodapé
+  // falar de 25 lançamentos enquanto a lista mostra 10.
+  const d = lanc.data;
+  const vinteCinco = Array.from({ length: 25 }, () => ({
+    data: d,
+    tipo: "Entrada" as const,
+    centavos: 10000,
+    descricao: "x",
+    quem: "b",
+  }));
+  const m = textoExtrato(vinteCinco, 0, true);
+  assertEquals(m.text.split("\n").filter((l) => l.includes("🟢")).length, PAGINA_EXTRATO);
+  assertStringIncludes(m.text, "1.000,00"); // 10 x R$ 100,00, não 25
+  assert(!m.text.includes("2.500,00"));
+});
+
+Deno.test("líquido negativo no extrato usa o sinal de menos", () => {
+  const d = lanc.data;
+  const m = textoExtrato(
+    [
+      { data: d, tipo: "Saída", centavos: 50000, descricao: "aluguel", quem: "b" },
+      { data: d, tipo: "Entrada", centavos: 10000, descricao: "troco", quem: "b" },
+    ],
+    0,
+    false,
+  );
+  assertStringIncludes(m.text, "➖ Líquido");
+  assertStringIncludes(m.text, "-400,00");
+});
+
+Deno.test("extrato vazio não ganha rodapé", () => {
+  const m = textoExtrato([], 0, false);
+  assert(!m.text.includes("Líquido"));
 });

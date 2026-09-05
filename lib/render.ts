@@ -141,12 +141,14 @@ export function erroValor(entrada: string, erro: ErroValor): Mensagem {
   };
 }
 
-export function textoSaldo(s: Saldo): Mensagem {
-  // O prefixo ocupa a mesma largura dos dois espaços do padrão, para o ícone do
-  // sinal não desalinhar as linhas que não o têm.
-  const linha = (rotulo: string, centavos: number, prefixo = "  ") =>
-    `${prefixo}${rotulo.padEnd(10)} R$ ${formatarBRL(centavos).padStart(12)}`;
+/**
+ * Uma linha de total. O prefixo ocupa a largura dos dois espaços do padrão,
+ * para o ícone do sinal não desalinhar as linhas que não o têm.
+ */
+const linha = (rotulo: string, centavos: number, prefixo = "  ") =>
+  `${prefixo}${rotulo.padEnd(10)} R$ ${formatarBRL(centavos).padStart(12)}`;
 
+export function textoSaldo(s: Saldo): Mensagem {
   const teclado = [[
     {
       text: `◀️ ${mesPorExtenso(mesAnterior(s.mes)).split("/")[0]}`,
@@ -175,12 +177,28 @@ export function textoExtrato(ls: Lancamento[], offset: number, temMais: boolean)
   if (ls.length === 0) {
     return { text: "Ainda não há nenhum lançamento registrado." };
   }
-  const linhas = ls.slice(0, PAGINA_EXTRATO).map((l) =>
+  // O corte vem antes da soma de propósito: o rodapé precisa falar das linhas
+  // que estão na tela, não das que foram recebidas.
+  const exibidos = ls.slice(0, PAGINA_EXTRATO);
+  const linhas = exibidos.map((l) =>
     `${ddMM(l.data)}  ${PONTO[l.tipo]} ${formatarBRL(l.centavos).padStart(10)}  ${
       l.descricao ? truncar(l.descricao, MAX_DESCRICAO) : "—"
     }  ·  ${truncar(l.quem, MAX_QUEM)}`
   );
-  const msg: Mensagem = { text: linhas.join("\n") };
+
+  const entradas = exibidos.reduce((t, l) => t + (l.tipo === "Entrada" ? l.centavos : 0), 0);
+  const saidas = exibidos.reduce((t, l) => t + (l.tipo === "Saída" ? l.centavos : 0), 0);
+  const liquido = entradas - saidas;
+
+  const msg: Mensagem = {
+    text: [
+      ...linhas,
+      "",
+      linha("Entradas", entradas),
+      linha("Saídas", saidas),
+      linha("Líquido", liquido, `${SINAL(liquido)} `),
+    ].join("\n"),
+  };
   if (temMais) {
     msg.reply_markup = {
       inline_keyboard: [[{
