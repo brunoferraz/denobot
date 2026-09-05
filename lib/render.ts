@@ -142,11 +142,12 @@ export function erroValor(entrada: string, erro: ErroValor): Mensagem {
 }
 
 /**
- * Uma linha de total. O prefixo ocupa a largura dos dois espaços do padrão,
- * para o ícone do sinal não desalinhar as linhas que não o têm.
+ * Uma linha de total. O sinal vai no FIM: um emoji renderiza mais largo que os
+ * espaços que ele substituiria, então como prefixo ele empurraria o rótulo e
+ * quebraria a coluna nas linhas que não o têm.
  */
-const linha = (rotulo: string, centavos: number, prefixo = "  ") =>
-  `${prefixo}${rotulo.padEnd(10)} R$ ${formatarBRL(centavos).padStart(12)}`;
+const linha = (rotulo: string, centavos: number, sinal = "") =>
+  `  ${rotulo.padEnd(10)} R$ ${formatarBRL(centavos).padStart(12)}${sinal}`;
 
 export function textoSaldo(s: Saldo): Mensagem {
   const teclado = [[
@@ -165,9 +166,9 @@ export function textoSaldo(s: Saldo): Mensagem {
       `📅 ${mesPorExtenso(s.mes)}`,
       linha("Entradas", s.entradasCentavos),
       linha("Saídas", s.saidasCentavos),
-      linha("Resultado", s.resultadoCentavos, `${SINAL(s.resultadoCentavos)} `),
+      linha("Resultado", s.resultadoCentavos, ` ${SINAL(s.resultadoCentavos)}`),
       "",
-      `${SINAL(s.acumuladoCentavos)} Acumulado geral  R$ ${formatarBRL(s.acumuladoCentavos)}`,
+      linha("Acumulado", s.acumuladoCentavos, ` ${SINAL(s.acumuladoCentavos)}`),
     ].join("\n"),
     reply_markup: { inline_keyboard: teclado },
   };
@@ -196,7 +197,7 @@ export function textoExtrato(ls: Lancamento[], offset: number, temMais: boolean)
       "",
       linha("Entradas", entradas),
       linha("Saídas", saidas),
-      linha("Líquido", liquido, `${SINAL(liquido)} `),
+      linha("Líquido", liquido, ` ${SINAL(liquido)}`),
     ].join("\n"),
   };
   if (temMais) {

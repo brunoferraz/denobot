@@ -295,14 +295,18 @@ Deno.test("ícones: setas indicam a natureza do lançamento", () => {
 Deno.test("ícones: sinal do saldo usa mais/menos, não seta", () => {
   const base = { mes: "2026-09", entradasCentavos: 200000, saidasCentavos: 35000 };
 
+  // O sinal fica no FIM da linha: como prefixo, o emoji é mais largo que os
+  // espaços das outras linhas e desalinharia a coluna do rótulo.
+  const linhaCom = (t: string, rotulo: string) => t.split("\n").find((l) => l.includes(rotulo))!;
+
   const positivo = textoSaldo({ ...base, resultadoCentavos: 165000, acumuladoCentavos: 482000 });
-  assertStringIncludes(positivo.text, "\u2795 Resultado");
-  assertStringIncludes(positivo.text, "\u2795 Acumulado");
+  assert(linhaCom(positivo.text, "Resultado").endsWith("\u2795"));
+  assert(linhaCom(positivo.text, "Acumulado").endsWith("\u2795"));
   assert(!positivo.text.includes("\u2796"), "resultado positivo não deve trazer menos");
 
   const negativo = textoSaldo({ ...base, resultadoCentavos: -165000, acumuladoCentavos: -482000 });
-  assertStringIncludes(negativo.text, "\u2796 Resultado");
-  assertStringIncludes(negativo.text, "\u2796 Acumulado");
+  assert(linhaCom(negativo.text, "Resultado").endsWith("\u2796"));
+  assert(linhaCom(negativo.text, "Acumulado").endsWith("\u2796"));
   // o número mantém o sinal: o ícone reforça, não substitui
   assertStringIncludes(negativo.text, "-1.650,00");
 });
@@ -332,8 +336,9 @@ Deno.test("extrato traz rodapé com entradas, saídas e líquido dos exibidos", 
   assertStringIncludes(m.text, "1.384,56");
   assertStringIncludes(m.text, "Saídas");
   assertStringIncludes(m.text, "200,00");
-  assertStringIncludes(m.text, "➕ Líquido");
-  assertStringIncludes(m.text, "1.184,56");
+  const liq = m.text.split("\n").find((l) => l.includes("Líquido"))!;
+  assert(liq.endsWith("\u2795"), "líquido positivo termina com mais");
+  assertStringIncludes(liq, "1.184,56");
 });
 
 Deno.test("o rodapé conta só as linhas exibidas, não as recebidas", () => {
@@ -363,11 +368,57 @@ Deno.test("líquido negativo no extrato usa o sinal de menos", () => {
     0,
     false,
   );
-  assertStringIncludes(m.text, "➖ Líquido");
-  assertStringIncludes(m.text, "-400,00");
+  const liq = m.text.split("\n").find((l) => l.includes("Líquido"))!;
+  assert(liq.endsWith("\u2796"), "líquido negativo termina com menos");
+  assertStringIncludes(liq, "-400,00");
 });
 
 Deno.test("extrato vazio não ganha rodapé", () => {
   const m = textoExtrato([], 0, false);
   assert(!m.text.includes("Líquido"));
+});
+
+Deno.test("as colunas de total ficam alinhadas em saldo e extrato", () => {
+  // O alinhamento é um requisito de leitura, não estética: sem um teste, um
+  // prefixo novo (um emoji, um rótulo mais longo) desloca a coluna em silêncio.
+  const colunas = (texto: string) =>
+    texto.split("\n").filter((l) => l.includes("R$")).map((l) => ({
+      linha: l,
+      rs: l.indexOf("R$"),
+      fim: l.indexOf("R$") + l.slice(l.indexOf("R$")).search(/\d[.,\d]*(?=\D*$)/),
+    }));
+
+  const s = colunas(
+    textoSaldo({
+      mes: "2026-09",
+      entradasCentavos: 138456,
+      saidasCentavos: 20000,
+      resultadoCentavos: 118456,
+      acumuladoCentavos: 118456,
+    }).text,
+  );
+  assertEquals(s.length, 4, "saldo tem quatro linhas de valor");
+  for (const c of s) {
+    assertEquals(c.rs, s[0].rs, `"R$" fora de coluna em: ${JSON.stringify(c.linha)}`);
+  }
+
+  const d = lanc.data;
+  const e = colunas(
+    textoExtrato(
+      [
+        { data: d, tipo: "Saída", centavos: 20000, descricao: "mercado", quem: "Bruno" },
+        { data: d, tipo: "Entrada", centavos: 123456, descricao: "salário", quem: "Bruno" },
+      ],
+      0,
+      false,
+    ).text,
+  );
+  assertEquals(e.length, 3, "extrato tem três linhas de total");
+  for (const c of e) {
+    assertEquals(c.rs, e[0].rs, `"R$" fora de coluna em: ${JSON.stringify(c.linha)}`);
+  }
+
+  // e os valores terminam todos na mesma coluna (padStart faz o trabalho)
+  const fimSaldo = s.map((c) => c.linha.replace(/ ?[➕➖]$/, "").length);
+  assertEquals(new Set(fimSaldo).size, 1, "valores do saldo não terminam na mesma coluna");
 });
