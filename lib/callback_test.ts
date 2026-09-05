@@ -4,6 +4,7 @@ import { type Callback, decodeCallback, encodeCallback } from "./callback.ts";
 const casos: Array<[Callback, string]> = [
   [{ tipo: "n", lancamento: "Entrada", centavos: 5000 }, "n|E|5000"],
   [{ tipo: "n", lancamento: "Saída", centavos: 5000 }, "n|S|5000"],
+  [{ tipo: "n", lancamento: "Entrada", centavos: 100_000_000 }, "n|E|100000000"],
   [{ tipo: "d", linha: 42 }, "d|42"],
   [{ tipo: "m", mes: "2026-08" }, "m|2026-08"],
   [{ tipo: "x", offset: 20 }, "x|20"],
@@ -34,6 +35,8 @@ Deno.test("decodeCallback rejeita valores fora do domínio válido", () => {
       "n|E|0",
       "n|E|007",
       "n|E|99999999999999999999",
+      "n|E|900000000000000",
+      "x|99999999999999999999",
     ]
   ) {
     assertEquals(decodeCallback(raw), null, raw);

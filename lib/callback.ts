@@ -1,3 +1,4 @@
+import { LIMITE_CENTAVOS } from "./money.ts";
 import type { TipoLancamento } from "./types.ts";
 
 export const LIMITE_CALLBACK_BYTES = 64;
@@ -45,6 +46,7 @@ export function decodeCallback(raw: string): Callback | null {
       if (!INTEIRO_SEM_ZERO_A_ESQUERDA.test(centavosRaw)) return null;
       const centavos = Number(centavosRaw);
       if (!Number.isSafeInteger(centavos)) return null;
+      if (centavos > LIMITE_CENTAVOS) return null;
       return {
         tipo: "n",
         lancamento: letra === "E" ? "Entrada" : "Saída",
@@ -63,7 +65,9 @@ export function decodeCallback(raw: string): Callback | null {
     }
     case "x": {
       if (partes.length !== 2 || !INTEIRO_POSITIVO.test(partes[1])) return null;
-      return { tipo: "x", offset: Number(partes[1]) };
+      const offset = Number(partes[1]);
+      if (!Number.isSafeInteger(offset)) return null;
+      return { tipo: "x", offset };
     }
     default:
       return null;
