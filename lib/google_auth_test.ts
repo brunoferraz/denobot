@@ -102,6 +102,28 @@ Deno.test("propaga falha do endpoint de token com o corpo do erro", async () => 
   await assertRejects(() => criarAuth(sa, impl)(), Error, "invalid_grant");
 });
 
+Deno.test("recusa um 200 sem access_token: não deixa o cache aceitar um token undefined", async () => {
+  const { sa } = await gerarServiceAccount();
+  const semAccessToken = new Response(JSON.stringify({ expires_in: 3600 }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+  const { impl } = fetchFalso([semAccessToken]);
+
+  await assertRejects(() => criarAuth(sa, impl)(), Error, "access_token");
+});
+
+Deno.test("recusa um 200 com expires_in não-numérico: evitaria o NaN que nunca expira e nunca cacheia", async () => {
+  const { sa } = await gerarServiceAccount();
+  const expiresInvalido = new Response(
+    JSON.stringify({ access_token: "ya29.token", expires_in: "3600" }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
+  const { impl } = fetchFalso([expiresInvalido]);
+
+  await assertRejects(() => criarAuth(sa, impl)(), Error, "access_token");
+});
+
 Deno.test("lerServiceAccount aceita \\n escapado na private_key", () => {
   const sa = lerServiceAccount(
     JSON.stringify({ client_email: "a@b.com", private_key: "linha1\\nlinha2" }),

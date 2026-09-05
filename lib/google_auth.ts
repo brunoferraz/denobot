@@ -87,7 +87,20 @@ export function criarAuth(sa: ServiceAccount, fetchImpl: typeof fetch = fetch): 
       throw new Error(`falha ao obter access token (${res.status}): ${await res.text()}`);
     }
 
-    const { access_token, expires_in } = await res.json();
+    const corpo = await res.json();
+    const { access_token, expires_in } = corpo as { access_token?: unknown; expires_in?: unknown };
+    // Um 200 sem access_token (string) ou com expires_in não-numérico faria
+    // `agora + expires_in` virar NaN — e NaN nunca é `>` de nada, então o
+    // guard de cache no topo desta função nunca acertaria. O cache existe
+    // para tirar a assinatura RSA do caminho quente (D1); um cache que nunca
+    // acerta reassina o JWT a cada request, exatamente o custo de CPU que
+    // ele deveria evitar. Recusar alto aqui é mais barato que descobrir isso
+    // no orçamento de 50ms do Deno Deploy.
+    if (typeof access_token !== "string" || typeof expires_in !== "number") {
+      throw new Error(
+        `resposta de token sem access_token/expires_in válidos: ${JSON.stringify(corpo)}`,
+      );
+    }
     cache = { token: access_token, expiraEm: agora + expires_in };
     return access_token;
   };

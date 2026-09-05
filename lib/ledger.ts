@@ -37,7 +37,7 @@ function paraLancamento(linha: unknown[]): Lancamento | null {
   if (!ehTipo(tipo)) return null;
   if (typeof valor !== "number" || !Number.isFinite(valor)) return null;
   const centavos = Math.round(valor * 100);
-  if (Math.abs(centavos) > LIMITE_CENTAVOS) return null;
+  if (centavos < 0 || centavos > LIMITE_CENTAVOS) return null;
   return {
     data: serialParaDate(data),
     tipo,

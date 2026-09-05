@@ -199,3 +199,21 @@ Deno.test("linha com tipo fora da união (número ou ausente) é rejeitada", asy
   const extrato = await ledger.extrato(0, 10);
   assertEquals(extrato.itens.length, 1);
 });
+
+Deno.test("linha com valor negativo (edição manual) é rejeitada, não vira ganho ilusório no saldo", async () => {
+  const { client } = sheetsFalso([
+    [SERIAL_04_09, "Entrada", 200, "", "Bruno", 1],
+    // -50 digitado à mão numa linha de Saída: sem o guard, o sinal negativo
+    // do valor se soma ao sinal (-1) do tipo "Saída" e vira +50 no acumulado
+    // — uma saída passaria a ENGORDAR o saldo em vez de reduzi-lo.
+    [SERIAL_04_09, "Saída", -50, "", "Bruno", 2],
+  ]);
+  const ledger = criarLedger(client);
+
+  const s = await ledger.saldo("2026-09");
+  assertEquals(s.saidasCentavos, 0, "a saída negativa não deveria contar no mês");
+  assertEquals(s.acumuladoCentavos, 20000, "a saída negativa não deveria contar no acumulado");
+
+  const extrato = await ledger.extrato(0, 10);
+  assertEquals(extrato.itens.length, 1, "a linha negativa deveria ser excluída do extrato também");
+});
