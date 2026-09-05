@@ -82,7 +82,7 @@ e recebe de volta o próprio ID; o admin recebe um aviso com o nome e o ID de qu
 acrescentar o número à variável e reiniciar:
 
 ```
-ALLOWED_USER_IDS=111222333,111222333
+ALLOWED_USER_IDS=111222333,444555666
 ```
 
 Esse atalho é **temporário** — ele faz o bot responder a estranhos, o que o projeto normalmente
