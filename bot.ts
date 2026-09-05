@@ -42,13 +42,12 @@ export function criarBot(
 ): Bot {
   const bot = new Bot(token, botInfo ? { botInfo: botInfo as UserFromGetMe } : undefined);
 
-  // `bot.catch` (registrado abaixo) só é chamado pelo laço interno de
-  // `handleUpdates` (usado por `bot.start()`, i.e. long polling). Tanto o
-  // `webhookCallback` do grammY (nosso modo de produção, ver scripts/
-  // set_webhook.ts) quanto os testes chamam `bot.handleUpdate` diretamente,
-  // que apenas relança o erro como uma Promise rejeitada — sem isso, uma
-  // falha do Sheets nunca chegaria a avisar o usuário, e ele acharia que o
-  // lançamento foi gravado quando na verdade a exceção estourou sem resposta.
+  // `bot.handleUpdate` — chamado tanto pelo `webhookCallback` de produção
+  // (ver main.ts) quanto pelos testes — apenas relança o erro de um handler
+  // como uma Promise rejeitada; não existe laço interno de tratamento como o
+  // de `bot.start()` (long polling). Sem este `bot.use`, uma falha do Sheets
+  // nunca chegaria a avisar o usuário, e ele acharia que o lançamento foi
+  // gravado quando na verdade a exceção estourou sem resposta.
   bot.use(async (ctx, next) => {
     try {
       await next();
@@ -167,22 +166,6 @@ export function criarBot(
 
   // Qualquer callback que não bata com os prefixos conhecidos: só apaga o spinner.
   bot.on("callback_query:data", (ctx) => ctx.answerCallbackQuery());
-
-  // Só é exercido quando o bot roda via `bot.start()` (long polling); no modo
-  // de produção (webhookCallback) e nos testes, quem trata o erro é o
-  // `bot.use` acima. Mantido como rede de segurança adicional.
-  bot.catch(async (err) => {
-    console.error("erro no handler:", err.error);
-    // O usuário precisa saber que a ação não teve efeito; sem isso ele
-    // acha que gravou e não gravou.
-    try {
-      await err.ctx.reply(
-        "⚠️ não consegui falar com a planilha agora. Tenta de novo em instantes.",
-      );
-    } catch (e) {
-      console.error("falhei até para avisar o usuário:", e);
-    }
-  });
 
   return bot;
 }

@@ -1,6 +1,5 @@
 import { assertEquals } from "@std/assert";
 import {
-  agoraISO,
   agoraLocal,
   dataParaISO,
   ddMM,
@@ -10,11 +9,6 @@ import {
   mesSeguinte,
   serialParaDate,
 } from "./tempo.ts";
-
-Deno.test("agoraISO devolve wall-clock de São Paulo em ISO", () => {
-  // 2026-09-04T17:32:00Z = 14:32 em São Paulo (UTC-3)
-  assertEquals(agoraISO(new Date("2026-09-04T17:32:00Z")), "2026-09-04 14:32:00");
-});
 
 Deno.test("agoraLocal impede que lançamento noturno caia no dia seguinte", () => {
   // 01:30Z do dia 5 ainda é 22:30 do dia 4 em São Paulo.

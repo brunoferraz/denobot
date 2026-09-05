@@ -15,14 +15,6 @@ const FMT_ISO = new Intl.DateTimeFormat("sv-SE", {
 });
 
 /**
- * Wall-clock de São Paulo como "YYYY-MM-DD HH:mm:ss".
- * O locale sv-SE já produz esse formato; é o truque que evita montar a string à mão.
- */
-export function agoraISO(agora: Date = new Date()): string {
-  return dataParaISO(agoraLocal(agora));
-}
-
-/**
  * Converte um instante real numa Date cujos campos UTC são o wall-clock de
  * São Paulo. Todo o resto do sistema lê datas pelos getters UTC — inclusive as
  * que voltam da planilha —, então essa normalização é o que impede que um
