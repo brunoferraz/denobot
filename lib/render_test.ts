@@ -53,7 +53,7 @@ Deno.test("confirmacao traz o botão de descrever e o de compartilhar", () => {
   const kb = (m.reply_markup as {
     inline_keyboard: Array<Array<{ callback_data?: string; url?: string }>>;
   }).inline_keyboard;
-  assertEquals(kb[0][0].callback_data, "d|42");
+  assertEquals(kb[0][0].callback_data, "d|42|S"); // o tipo viaja no botão
   assert(kb[1][0].url!.startsWith("https://wa.me/?text="));
 });
 
@@ -234,4 +234,40 @@ Deno.test("textoExtrato se autolimita a PAGINA_EXTRATO mesmo recebendo mais linh
     m.text.length < 4096,
     `textoExtrato com 25 linhas de pior caso produziu ${m.text.length} caracteres, limite do Telegram é 4096`,
   );
+});
+
+Deno.test("a pergunta muda conforme o tipo do lançamento", () => {
+  const saida = perguntaDescricao(42, "Saída");
+  assertStringIncludes(saida.text, "Qual foi o gasto?");
+  assertEquals(extrairLinha(saida.text), 42);
+
+  const entrada = perguntaDescricao(42, "Entrada");
+  assertStringIncludes(entrada.text, "Qual a fonte do dinheiro?");
+  assert(!entrada.text.includes("gasto"), "entrada não deve perguntar por gasto");
+  assertEquals(extrairLinha(entrada.text), 42);
+
+  // sem tipo (botão antigo) cai na pergunta original
+  assertEquals(extrairLinha(perguntaDescricao(42).text), 42);
+});
+
+Deno.test("o botão de descrever carrega o tipo e muda de rótulo", () => {
+  const kbSaida = (confirmacao({ ...lanc, descricao: "" }, 42).reply_markup as {
+    inline_keyboard: Array<Array<{ text: string; callback_data?: string }>>;
+  }).inline_keyboard;
+  assertEquals(kbSaida[0][0].callback_data, "d|42|S");
+  assertStringIncludes(kbSaida[0][0].text, "gasto");
+
+  const kbEntrada = (confirmacao({ ...lanc, tipo: "Entrada", descricao: "" }, 42).reply_markup as {
+    inline_keyboard: Array<Array<{ text: string; callback_data?: string }>>;
+  }).inline_keyboard;
+  assertEquals(kbEntrada[0][0].callback_data, "d|42|E");
+  assertStringIncludes(kbEntrada[0][0].text, "fonte");
+});
+
+Deno.test("a âncora do marcador continua fechada para as duas perguntas", () => {
+  // o nome de exibição é controlado pelo usuário: nenhuma das duas frases pode
+  // ser reconhecida quando aparece no fim de um resumo.
+  assertEquals(extrairLinha("Entrada de R$ 10,00 · salário · 04/09 · Ana #2"), null);
+  assertEquals(extrairLinha("Qual a fonte do dinheiro? #7 · Ana #2"), null);
+  assertEquals(extrairLinha("prefixo Qual a fonte do dinheiro? #7"), null);
 });

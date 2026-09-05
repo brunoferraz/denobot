@@ -171,9 +171,17 @@ A linha é gravada **no toque do botão**, não no fim do fluxo. Nada se perde s
 
 ### 6.2 Descrição opcional
 
+A pergunta acompanha o tipo do lançamento: uma **saída** teve um gasto, uma
+**entrada** teve uma fonte. O botão muda de rótulo junto (`✏️ Qual foi o gasto?`
+/ `✏️ Qual a fonte?`), e o tipo viaja no `callback_data` (`d|42|S`, `d|42|E`) —
+o botão precisa saber disso sozinho, porque o toque chega como um update
+separado. O tipo é opcional na decodificação, então botões emitidos antes desta
+mudança seguem válidos.
+
 ```
 você:  (toca ✏️)
-bot:   Qual foi o gasto? #42
+bot:   Qual foi o gasto? #42          (saída)
+bot:   Qual a fonte do dinheiro? #42  (entrada)
        (campo de resposta abre sozinho)
 você:  mercado
 bot:   ✅ Saída R$ 50,00 · mercado

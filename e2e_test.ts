@@ -403,3 +403,36 @@ Deno.test("e2e: mensagem sem dígito recebe só a dica de uso", async () => {
   assertStringIncludes(String(ultima(telegram, "sendMessage").payload.text), "/saldo");
   assertEquals(google.chamadas, []);
 });
+
+Deno.test("e2e: entrada pergunta pela fonte, e a resposta grava igual", async () => {
+  const { handler, telegram, google } = await montarServidor();
+
+  await handler(pedido(texto("2000")));
+  await handler(pedido(callback("n|E|200000")));
+  const linha = google.linhas.length;
+
+  // o botão de descrever precisa ter vindo com o tipo embutido
+  const conf = ultima(telegram, "editMessageText");
+  const kb = (conf.payload.reply_markup as {
+    inline_keyboard: Array<Array<{ callback_data?: string; text: string }>>;
+  }).inline_keyboard;
+  assertEquals(kb[0][0].callback_data, `d|${linha}|E`);
+  assertStringIncludes(kb[0][0].text, "fonte");
+
+  await handler(pedido(callback(`d|${linha}|E`)));
+  const prompt = ultima(telegram, "sendMessage");
+  assertStringIncludes(String(prompt.payload.text), "Qual a fonte do dinheiro?");
+
+  await handler(pedido(texto("salário", {
+    reply_to_message: {
+      message_id: 9,
+      date: 0,
+      chat: { id: EU, type: "private" },
+      text: String(prompt.payload.text),
+    },
+  })));
+
+  assertEquals(google.linhas[linha - 1][3], "salário");
+  const depois = ultima(telegram, "sendMessage");
+  assertStringIncludes(String(depois.payload.text), "salário");
+});

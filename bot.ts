@@ -117,7 +117,8 @@ export function criarBot(
   bot.on("message:text", async (ctx) => {
     const texto = ctx.message.text;
 
-    // 1. Resposta a "Qual foi o gasto? #42" -> é descrição, não passa pelo parser.
+    // 1. Resposta a uma pergunta de descrição ("Qual foi o gasto? #42" ou
+    //    "Qual a fonte do dinheiro? #42") -> é descrição, não passa pelo parser.
     const linha = extrairLinha(ctx.message.reply_to_message?.text ?? "");
     // A linha 1 é o cabeçalho; extrairLinha não tem teto de dígitos, então um
     // marcador forjado/corrompido poderia produzir um número absurdo — o
@@ -183,7 +184,7 @@ export function criarBot(
     const cb = decodeCallback(ctx.callbackQuery.data);
     await ctx.answerCallbackQuery();
     if (cb?.tipo !== "d") return;
-    const m = perguntaDescricao(cb.linha);
+    const m = perguntaDescricao(cb.linha, cb.lancamento);
     await ctx.reply(m.text, { reply_markup: m.reply_markup as never });
   });
 

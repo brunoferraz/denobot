@@ -512,3 +512,46 @@ Deno.test("falha genérica (não-403) continua com a mensagem curta, sem o texto
   assertStringIncludes(aviso, "não consegui falar com a planilha");
   assert(!aviso.includes("compartilhada"), "só o 403 deveria citar a causa da service account");
 });
+
+Deno.test("o botão de descrever pergunta pela fonte quando é entrada", async () => {
+  const { ledger } = ledgerFalso();
+  const { bot, chamadas } = montar(ledger);
+  await bot.handleUpdate(updCallback("d|42|E"));
+
+  const envio = chamadas.find((c) => c.method === "sendMessage")!;
+  assertStringIncludes(String(envio.payload.text), "Qual a fonte do dinheiro?");
+  assertStringIncludes(String(envio.payload.text), "#42");
+});
+
+Deno.test("o botão de descrever pergunta pelo gasto quando é saída", async () => {
+  const { ledger } = ledgerFalso();
+  const { bot, chamadas } = montar(ledger);
+  await bot.handleUpdate(updCallback("d|42|S"));
+  assertStringIncludes(
+    String(chamadas.find((c) => c.method === "sendMessage")!.payload.text),
+    "Qual foi o gasto?",
+  );
+});
+
+Deno.test("botão antigo sem tipo continua funcionando", async () => {
+  const { ledger } = ledgerFalso();
+  const { bot, chamadas } = montar(ledger);
+  await bot.handleUpdate(updCallback("d|42"));
+  const envio = chamadas.find((c) => c.method === "sendMessage")!;
+  assertStringIncludes(String(envio.payload.text), "#42");
+  assertEquals((envio.payload.reply_markup as { force_reply: boolean }).force_reply, true);
+});
+
+Deno.test("responder a pergunta de fonte grava a descrição igual à de gasto", async () => {
+  const { ledger, descricoes } = ledgerFalso();
+  const { bot } = montar(ledger);
+  await bot.handleUpdate(updTexto("salário", {
+    reply_to_message: {
+      message_id: 9,
+      date: 0,
+      chat: { id: 55, type: "private" },
+      text: "Qual a fonte do dinheiro? #42",
+    },
+  }));
+  assertEquals(descricoes, [{ linha: 42, descricao: "salário" }]);
+});

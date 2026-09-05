@@ -1,5 +1,5 @@
 import { type ErroValor, formatarBRL } from "./money.ts";
-import type { Lancamento, Saldo } from "./types.ts";
+import type { Lancamento, Saldo, TipoLancamento } from "./types.ts";
 import { encodeCallback } from "./callback.ts";
 import { ddMM, mesAnterior, mesPorExtenso, mesSeguinte } from "./tempo.ts";
 
@@ -69,27 +69,42 @@ export function confirmacao(l: Lancamento, linha: number): Mensagem {
   const teclado: Array<Array<Record<string, string>>> = [];
   if (!l.descricao) {
     teclado.push([{
-      text: "✏️ Qual foi o gasto?",
-      callback_data: encodeCallback({ tipo: "d", linha }),
+      text: l.tipo === "Entrada" ? "✏️ Qual a fonte?" : "✏️ Qual foi o gasto?",
+      callback_data: encodeCallback({ tipo: "d", linha, lancamento: l.tipo }),
     }]);
   }
   teclado.push([{ text: "📤 Compartilhar", url: linkWhatsApp(l) }]);
   return { text: `✅ ${resumo(l)}`, reply_markup: { inline_keyboard: teclado } };
 }
 
-const MARCADOR = /^Qual foi o gasto\? #(\d+)$/;
+/** Uma pergunta por tipo: dinheiro que sai teve um gasto, dinheiro que entra teve uma fonte. */
+const PERGUNTAS = {
+  Entrada: { frase: "Qual a fonte do dinheiro?", exemplo: "ex.: salário" },
+  Saída: { frase: "Qual foi o gasto?", exemplo: "ex.: mercado" },
+} as const;
 
-export function perguntaDescricao(linha: number): Mensagem {
+/**
+ * Reconhece as duas perguntas, e SÓ elas, da primeira à última letra. A âncora
+ * é o que impede que um nome de exibição terminado em "#2" — texto controlado
+ * pelo usuário, que o `resumo` interpola no fim da linha — seja lido como um
+ * marcador e escreva a descrição na linha errada.
+ */
+const MARCADOR = new RegExp(
+  `^(?:${Object.values(PERGUNTAS).map((p) => p.frase.replace("?", "\\?")).join("|")}) #(\\d+)$`,
+);
+
+export function perguntaDescricao(linha: number, tipo?: TipoLancamento): Mensagem {
+  const { frase, exemplo } = PERGUNTAS[tipo ?? "Saída"];
   return {
-    text: `Qual foi o gasto? #${linha}`,
+    text: `${frase} #${linha}`,
     reply_markup: {
       force_reply: true,
-      input_field_placeholder: "ex.: mercado",
+      input_field_placeholder: exemplo,
     },
   };
 }
 
-/** Recupera o número da linha embutido em "Qual foi o gasto? #42". */
+/** Recupera o número da linha embutido em "Qual foi o gasto? #42" e congêneres. */
 export function extrairLinha(texto: string): number | null {
   const m = texto.match(MARCADOR);
   return m ? Number(m[1]) : null;

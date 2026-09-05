@@ -5,7 +5,12 @@ export const LIMITE_CALLBACK_BYTES = 64;
 
 export type Callback =
   | { tipo: "n"; lancamento: TipoLancamento; centavos: number }
-  | { tipo: "d"; linha: number }
+  /**
+   * `lancamento` é opcional de propósito: botões emitidos antes de a pergunta
+   * variar por tipo carregam só a linha (`d|42`), e continuam válidos. Quando
+   * presente, decide se a pergunta é "qual foi o gasto" ou "qual a fonte".
+   */
+  | { tipo: "d"; linha: number; lancamento?: TipoLancamento }
   | { tipo: "m"; mes: string }
   | { tipo: "x"; offset: number };
 
@@ -16,7 +21,9 @@ export function encodeCallback(cb: Callback): string {
       raw = `n|${cb.lancamento === "Entrada" ? "E" : "S"}|${cb.centavos}`;
       break;
     case "d":
-      raw = `d|${cb.linha}`;
+      raw = cb.lancamento
+        ? `d|${cb.linha}|${cb.lancamento === "Entrada" ? "E" : "S"}`
+        : `d|${cb.linha}`;
       break;
     case "m":
       raw = `m|${cb.mes}`;
@@ -54,10 +61,14 @@ export function decodeCallback(raw: string): Callback | null {
       };
     }
     case "d": {
-      if (partes.length !== 2 || !INTEIRO_SEM_ZERO_A_ESQUERDA.test(partes[1])) return null;
+      if (partes.length !== 2 && partes.length !== 3) return null;
+      if (!INTEIRO_SEM_ZERO_A_ESQUERDA.test(partes[1])) return null;
       const linha = Number(partes[1]);
       if (!Number.isSafeInteger(linha)) return null;
-      return { tipo: "d", linha };
+      if (partes.length === 2) return { tipo: "d", linha };
+      const letra = partes[2];
+      if (letra !== "E" && letra !== "S") return null;
+      return { tipo: "d", linha, lancamento: letra === "E" ? "Entrada" : "Saída" };
     }
     case "m": {
       if (partes.length !== 2 || !MES_VALIDO.test(partes[1])) return null;
