@@ -32,6 +32,8 @@ export function encodeCallback(cb: Callback): string {
 }
 
 const INTEIRO_POSITIVO = /^\d+$/;
+const INTEIRO_SEM_ZERO_A_ESQUERDA = /^[1-9]\d*$/;
+const MES_VALIDO = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 export function decodeCallback(raw: string): Callback | null {
   const partes = raw.split("|");
@@ -40,7 +42,7 @@ export function decodeCallback(raw: string): Callback | null {
       const [, letra, centavos] = partes;
       if (partes.length !== 3) return null;
       if (letra !== "E" && letra !== "S") return null;
-      if (!INTEIRO_POSITIVO.test(centavos)) return null;
+      if (!INTEIRO_SEM_ZERO_A_ESQUERDA.test(centavos)) return null;
       return {
         tipo: "n",
         lancamento: letra === "E" ? "Entrada" : "Saída",
@@ -48,11 +50,13 @@ export function decodeCallback(raw: string): Callback | null {
       };
     }
     case "d": {
-      if (partes.length !== 2 || !INTEIRO_POSITIVO.test(partes[1])) return null;
-      return { tipo: "d", linha: Number(partes[1]) };
+      if (partes.length !== 2 || !INTEIRO_SEM_ZERO_A_ESQUERDA.test(partes[1])) return null;
+      const linha = Number(partes[1]);
+      if (!Number.isSafeInteger(linha)) return null;
+      return { tipo: "d", linha };
     }
     case "m": {
-      if (partes.length !== 2 || !/^\d{4}-\d{2}$/.test(partes[1])) return null;
+      if (partes.length !== 2 || !MES_VALIDO.test(partes[1])) return null;
       return { tipo: "m", mes: partes[1] };
     }
     case "x": {

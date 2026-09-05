@@ -23,6 +23,22 @@ Deno.test("decodeCallback devolve null para entrada inválida", () => {
   }
 });
 
+Deno.test("decodeCallback rejeita valores fora do domínio válido", () => {
+  for (
+    const raw of [
+      "d|0",
+      "d|007",
+      "d|99999999999999999999",
+      "m|2026-13",
+      "m|0000-00",
+      "n|E|0",
+      "n|E|007",
+    ]
+  ) {
+    assertEquals(decodeCallback(raw), null, raw);
+  }
+});
+
 Deno.test("encodeCallback recusa payload acima de 64 bytes", () => {
   assertThrows(() => encodeCallback({ tipo: "m", mes: "x".repeat(70) }));
 });
