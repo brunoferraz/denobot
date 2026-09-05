@@ -33,6 +33,7 @@ Deno.test("decodeCallback rejeita valores fora do domínio válido", () => {
       "m|0000-00",
       "n|E|0",
       "n|E|007",
+      "n|E|99999999999999999999",
     ]
   ) {
     assertEquals(decodeCallback(raw), null, raw);

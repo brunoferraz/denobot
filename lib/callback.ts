@@ -39,14 +39,16 @@ export function decodeCallback(raw: string): Callback | null {
   const partes = raw.split("|");
   switch (partes[0]) {
     case "n": {
-      const [, letra, centavos] = partes;
+      const [, letra, centavosRaw] = partes;
       if (partes.length !== 3) return null;
       if (letra !== "E" && letra !== "S") return null;
-      if (!INTEIRO_SEM_ZERO_A_ESQUERDA.test(centavos)) return null;
+      if (!INTEIRO_SEM_ZERO_A_ESQUERDA.test(centavosRaw)) return null;
+      const centavos = Number(centavosRaw);
+      if (!Number.isSafeInteger(centavos)) return null;
       return {
         tipo: "n",
         lancamento: letra === "E" ? "Entrada" : "Saída",
-        centavos: Number(centavos),
+        centavos,
       };
     }
     case "d": {
