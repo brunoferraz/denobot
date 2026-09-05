@@ -71,3 +71,20 @@ deno task check   # type-check, lint e fmt
 
 Documentos: [design](docs/superpowers/specs/2026-09-04-bot-financeiro-telegram-design.md) e
 [plano de implementação](docs/superpowers/plans/2026-09-04-bot-financeiro-telegram.md).
+
+## Dar acesso a alguém
+
+`ALLOWED_USER_IDS` é uma lista de IDs numéricos do Telegram separados por vírgula, sem espaços. O
+**primeiro** da lista é o admin.
+
+Enquanto o cadastro da família não termina, o bot ajuda: quem não tem acesso manda qualquer mensagem
+e recebe de volta o próprio ID; o admin recebe um aviso com o nome e o ID de quem pediu. Basta
+acrescentar o número à variável e reiniciar:
+
+```
+ALLOWED_USER_IDS=111222333,111222333
+```
+
+Esse atalho é **temporário** — ele faz o bot responder a estranhos, o que o projeto normalmente
+evita. Quando todos estiverem cadastrados, remova-o seguindo as instruções no topo de
+`lib/onboarding.ts` (duas linhas em `main.ts`, mais apagar dois arquivos).

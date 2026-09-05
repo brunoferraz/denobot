@@ -1,4 +1,4 @@
-import { Bot } from "grammy";
+import { Bot, type Context } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import type { Ledger } from "./lib/ledger.ts";
 import type { Lancamento } from "./lib/types.ts";
@@ -30,6 +30,14 @@ export interface DepsBot {
   ledger: Ledger;
   agora?: () => Date;
   botInfo?: unknown;
+  /**
+   * Opcional. Chamado quando um update vem de quem NÃO está na allowlist.
+   * Sem ele o comportamento é o silêncio total do spec §9 — é o padrão.
+   * Hoje é usado pelo aviso de cadastro (lib/onboarding.ts), que é
+   * temporário; esta costura existe para que removê-lo seja apagar uma
+   * linha em main.ts, sem tocar em lógica aqui.
+   */
+  aoNegar?: (ctx: Context) => Promise<void>;
 }
 
 /**
@@ -43,14 +51,17 @@ function clampDescricao(texto: string): string {
 }
 
 export function criarBot(
-  { token, permitidos, ledger, agora = () => new Date(), botInfo }: DepsBot,
+  { token, permitidos, ledger, agora = () => new Date(), botInfo, aoNegar }: DepsBot,
 ): Bot {
   const bot = new Bot(token, botInfo ? { botInfo: botInfo as UserFromGetMe } : undefined);
 
-  // Quem não está na allowlist não recebe resposta alguma — nem um erro.
-  // Silêncio evita confirmar que o bot existe para quem descobriu o @.
+  // Quem não está na allowlist não alcança handler nenhum. Por padrão não
+  // recebe resposta alguma — nem um erro: silêncio evita confirmar que o bot
+  // existe para quem descobriu o @ (spec §9). O `aoNegar` opcional é a única
+  // exceção, hoje usada pelo aviso de cadastro temporário (lib/onboarding.ts).
   bot.use(async (ctx, next) => {
-    if (ctx.from && permitidos.has(ctx.from.id)) await next();
+    if (ctx.from && permitidos.has(ctx.from.id)) return await next();
+    await aoNegar?.(ctx);
   });
 
   // `bot.handleUpdate` — chamado tanto pelo `webhookCallback` de produção

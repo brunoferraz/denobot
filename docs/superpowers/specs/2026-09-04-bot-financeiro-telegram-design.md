@@ -263,6 +263,17 @@ O webhook é uma URL pública. Três camadas:
 2. **Path não-óbvio** — servir em `/webhook` ou um caminho aleatório, nunca na raiz.
 3. **Allowlist de `from.id`** — apenas IDs autorizados operam o bot; os demais recebem silêncio.
 
+**Exceção temporária ao silêncio (cadastro).** Enquanto a família não estiver
+toda cadastrada, uma mensagem de texto de quem não está na allowlist recebe de
+volta o próprio ID do Telegram, e o admin — o primeiro ID de
+`ALLOWED_USER_IDS` — recebe um aviso. Sem isso, descobrir o ID de alguém exige
+um bot de terceiros e um copia-e-cola. O custo é que um estranho que ache o bot
+descobre que ele existe, e pode gerar aviso repetido para o admin (o bot é
+stateless e não lembra quem já pediu). Toque em botão e demais updates seguem em
+silêncio. Vive isolado em `lib/onboarding.ts`, ligado por uma costura opcional
+(`DepsBot.aoNegar`) cujo padrão é o silêncio original; o arquivo documenta como
+removê-lo.
+
 Segredos vivem exclusivamente em variáveis de ambiente. A chave da service account nunca entra no repositório.
 
 ## 10. Configuração

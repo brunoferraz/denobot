@@ -3,6 +3,9 @@ import { criarBot } from "./bot.ts";
 import { criarAuth, lerServiceAccount } from "./lib/google_auth.ts";
 import { criarSheets } from "./lib/sheets.ts";
 import { criarLedger } from "./lib/ledger.ts";
+// TEMPORÁRIO — ver lib/onboarding.ts. Removê-lo é apagar este import e a
+// linha `aoNegar:` abaixo; o padrão sem ele é o silêncio total do spec §9.
+import { criarAvisoDeCadastro } from "./lib/onboarding.ts";
 
 export function lerEnv(nome: string): string {
   const v = Deno.env.get(nome);
@@ -73,10 +76,16 @@ if (import.meta.main) {
   const obterToken = criarAuth(lerServiceAccount(lerEnv("GOOGLE_SERVICE_ACCOUNT_JSON")));
   const ledger = criarLedger(criarSheets(lerEnv("SPREADSHEET_ID"), obterToken));
 
+  const permitidos = exigirPermitidos(lerEnv("ALLOWED_USER_IDS"));
+  // O admin é o PRIMEIRO id de ALLOWED_USER_IDS — o Set preserva a ordem de
+  // inserção, e montarPermitidos insere na ordem em que aparecem na variável.
+  const admin = [...permitidos][0];
+
   const bot = criarBot({
     token: lerEnv("BOT_TOKEN"),
-    permitidos: exigirPermitidos(lerEnv("ALLOWED_USER_IDS")),
+    permitidos,
     ledger,
+    aoNegar: criarAvisoDeCadastro(admin),
   });
 
   const handleUpdate = webhookCallback(bot, "std/http", {
