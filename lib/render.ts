@@ -33,8 +33,12 @@ function truncar(texto: string, max: number): string {
   return pontos.length > max ? `${pontos.slice(0, max).join("")}…` : texto;
 }
 
-/** A seta diz a NATUREZA do lançamento: o que entra sobe, o que sai desce. */
-const SETA: Record<Lancamento["tipo"], string> = { Entrada: "↗️", Saída: "↘️" };
+/**
+ * Nos botões, a seta diz a NATUREZA do lançamento: o que entra sobe, o que sai
+ * desce. No extrato usamos cor — numa lista que se lê batendo o olho, verde e
+ * vermelho separam melhor que duas setas parecidas.
+ */
+const PONTO: Record<Lancamento["tipo"], string> = { Entrada: "🟢", Saída: "🔴" };
 
 /** O sinal diz o EFEITO no bolso — outra informação, outro ícone. */
 const SINAL = (centavos: number) => (centavos < 0 ? "➖" : "➕");
@@ -172,7 +176,7 @@ export function textoExtrato(ls: Lancamento[], offset: number, temMais: boolean)
     return { text: "Ainda não há nenhum lançamento registrado." };
   }
   const linhas = ls.slice(0, PAGINA_EXTRATO).map((l) =>
-    `${ddMM(l.data)}  ${SETA[l.tipo]} ${formatarBRL(l.centavos).padStart(10)}  ${
+    `${ddMM(l.data)}  ${PONTO[l.tipo]} ${formatarBRL(l.centavos).padStart(10)}  ${
       l.descricao ? truncar(l.descricao, MAX_DESCRICAO) : "—"
     }  ·  ${truncar(l.quem, MAX_QUEM)}`
   );

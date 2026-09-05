@@ -279,8 +279,12 @@ Deno.test("ícones: setas indicam a natureza do lançamento", () => {
   assertStringIncludes(kb[0].text, "\u2197\uFE0F"); // ArrowUpRight = entrada
   assertStringIncludes(kb[1].text, "\u2198\uFE0F"); // ArrowDownRight = saída
 
-  assertStringIncludes(textoExtrato([{ ...lanc, tipo: "Saída" }], 0, false).text, "\u2198\uFE0F");
-  assertStringIncludes(textoExtrato([{ ...lanc, tipo: "Entrada" }], 0, false).text, "\u2197\uFE0F");
+  // No extrato a pergunta é "isso me fez bem ou mal?" — cor responde mais rápido
+  // que direção numa lista que se lê batendo o olho.
+  assertStringIncludes(textoExtrato([{ ...lanc, tipo: "Saída" }], 0, false).text, "\u{1F534}");
+  assertStringIncludes(textoExtrato([{ ...lanc, tipo: "Entrada" }], 0, false).text, "\u{1F7E2}");
+  // e as setas não sobram por lá
+  assert(!textoExtrato([{ ...lanc, tipo: "Saída" }], 0, false).text.includes("\u2198\uFE0F"));
 });
 
 Deno.test("ícones: sinal do saldo usa mais/menos, não seta", () => {
