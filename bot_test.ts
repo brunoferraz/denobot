@@ -267,3 +267,165 @@ Deno.test("descrição longa é truncada em MAX_DESCRICAO antes de gravar, e o e
   assertStringIncludes(texto, "a".repeat(MAX_DESCRICAO));
   assert(!texto.includes(textoLongo), "eco não deveria conter o texto bruto sem clamp");
 });
+
+Deno.test("botão de descrever manda a pergunta com force_reply e a linha embutida", async () => {
+  const { ledger } = ledgerFalso();
+  const { bot, chamadas } = montar(ledger);
+  await bot.handleUpdate(updCallback("d|42"));
+
+  const envio = chamadas.find((c) => c.method === "sendMessage")!;
+  assertStringIncludes(String(envio.payload.text), "#42");
+  assertEquals((envio.payload.reply_markup as { force_reply: boolean }).force_reply, true);
+});
+
+Deno.test("resposta à pergunta grava a descrição na linha certa", async () => {
+  const { ledger, descricoes } = ledgerFalso();
+  const { bot } = montar(ledger);
+  await bot.handleUpdate(updTexto("mercado", {
+    reply_to_message: {
+      message_id: 9,
+      date: 0,
+      chat: { id: 55, type: "private" },
+      text: "Qual foi o gasto? #42",
+    },
+  }));
+
+  assertEquals(descricoes, [{ linha: 42, descricao: "mercado" }]);
+});
+
+Deno.test("uma resposta com número não é confundida com novo lançamento", async () => {
+  const { ledger, descricoes } = ledgerFalso();
+  const { bot } = montar(ledger);
+  await bot.handleUpdate(updTexto("uber 2 corridas", {
+    reply_to_message: {
+      message_id: 9,
+      date: 0,
+      chat: { id: 55, type: "private" },
+      text: "Qual foi o gasto? #42",
+    },
+  }));
+
+  assertEquals(descricoes, [{ linha: 42, descricao: "uber 2 corridas" }]);
+});
+
+Deno.test("/saldo consulta o mês corrente segundo o relógio injetado", async () => {
+  const mesesPedidos: string[] = [];
+  const { ledger } = ledgerFalso({
+    // deno-lint-ignore require-await
+    async saldo(mes) {
+      mesesPedidos.push(mes);
+      return {
+        mes,
+        entradasCentavos: 200000,
+        saidasCentavos: 35000,
+        resultadoCentavos: 165000,
+        acumuladoCentavos: 482000,
+      };
+    },
+  });
+  const { bot, chamadas } = montar(ledger);
+  await bot.handleUpdate(
+    updTexto("/saldo", { entities: [{ type: "bot_command", offset: 0, length: 6 }] }),
+  );
+
+  assertEquals(mesesPedidos, ["2026-09"]);
+  assertStringIncludes(String(chamadas[0].payload.text), "Setembro/2026");
+  assertStringIncludes(String(chamadas[0].payload.text), "1.650,00");
+});
+
+Deno.test("/saldo usa o mês do wall-clock de SP, não o mês em UTC", async () => {
+  // 2026-09-01T02:00:00Z = 2026-08-31T23:00:00 em São Paulo (UTC-3): o mês já
+  // virou em UTC mas ainda não em SP. Sem normalizar com agoraLocal, /saldo
+  // consultaria "2026-09" um mês adiantado — o mesmo defeito de fuso horário
+  // já corrigido para o registro de lançamentos (agoraLocal em bot.ts).
+  const mesesPedidos: string[] = [];
+  const { ledger } = ledgerFalso({
+    // deno-lint-ignore require-await
+    async saldo(mes) {
+      mesesPedidos.push(mes);
+      return {
+        mes,
+        entradasCentavos: 0,
+        saidasCentavos: 0,
+        resultadoCentavos: 0,
+        acumuladoCentavos: 0,
+      };
+    },
+  });
+  const { bot } = montar(ledger, () => new Date("2026-09-01T02:00:00Z"));
+  await bot.handleUpdate(
+    updTexto("/saldo", { entities: [{ type: "bot_command", offset: 0, length: 6 }] }),
+  );
+
+  assertEquals(mesesPedidos, ["2026-08"]);
+});
+
+Deno.test("botão de mês reconsulta e edita a mesma mensagem", async () => {
+  const mesesPedidos: string[] = [];
+  const { ledger } = ledgerFalso({
+    // deno-lint-ignore require-await
+    async saldo(mes) {
+      mesesPedidos.push(mes);
+      return {
+        mes,
+        entradasCentavos: 0,
+        saidasCentavos: 0,
+        resultadoCentavos: 0,
+        acumuladoCentavos: 0,
+      };
+    },
+  });
+  const { bot, chamadas } = montar(ledger);
+  await bot.handleUpdate(updCallback("m|2026-08"));
+
+  assertEquals(mesesPedidos, ["2026-08"]);
+  assert(chamadas.some((c) => c.method === "editMessageText"));
+});
+
+Deno.test("/extrato pede a primeira página", async () => {
+  const pedidos: Array<[number, number]> = [];
+  const { ledger } = ledgerFalso({
+    // deno-lint-ignore require-await
+    async extrato(offset, limite) {
+      pedidos.push([offset, limite]);
+      return { itens: [], temMais: false };
+    },
+  });
+  const { bot } = montar(ledger);
+  await bot.handleUpdate(
+    updTexto("/extrato", { entities: [{ type: "bot_command", offset: 0, length: 8 }] }),
+  );
+
+  assertEquals(pedidos, [[0, 10]]);
+});
+
+Deno.test("botão Ver mais avança o offset e edita a mensagem", async () => {
+  const pedidos: Array<[number, number]> = [];
+  const { ledger } = ledgerFalso({
+    // deno-lint-ignore require-await
+    async extrato(offset, limite) {
+      pedidos.push([offset, limite]);
+      return { itens: [], temMais: false };
+    },
+  });
+  const { bot, chamadas } = montar(ledger);
+  await bot.handleUpdate(updCallback("x|10"));
+
+  assertEquals(pedidos, [[10, 10]]);
+  assert(chamadas.some((c) => c.method === "editMessageText"));
+});
+
+Deno.test("falha do ledger vira aviso ao usuário, não exceção não tratada", async () => {
+  const { ledger } = ledgerFalso({
+    registrar() {
+      return Promise.reject(new Error("Sheets 403: sem permissão"));
+    },
+  });
+  const { bot, chamadas } = montar(ledger);
+  await bot.handleUpdate(updCallback("n|S|5000"));
+
+  assert(
+    chamadas.some((c) => String(c.payload.text ?? "").includes("não consegui")),
+    "usuário precisa ser avisado da falha",
+  );
+});

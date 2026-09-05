@@ -4,7 +4,7 @@ import type { Ledger } from "./lib/ledger.ts";
 import type { Lancamento } from "./lib/types.ts";
 import { pareceValor, parseValor } from "./lib/money.ts";
 import { decodeCallback } from "./lib/callback.ts";
-import { agoraLocal } from "./lib/tempo.ts";
+import { agoraLocal, mesDe } from "./lib/tempo.ts";
 import {
   confirmacao,
   dicaUso,
@@ -12,7 +12,11 @@ import {
   extrairLinha,
   MAX_DESCRICAO,
   type Mensagem,
+  PAGINA_EXTRATO,
+  perguntaDescricao,
   perguntaTipo,
+  textoExtrato,
+  textoSaldo,
 } from "./lib/render.ts";
 
 export interface DepsBot {
@@ -38,6 +42,26 @@ export function criarBot(
 ): Bot {
   const bot = new Bot(token, botInfo ? { botInfo: botInfo as UserFromGetMe } : undefined);
 
+  // `bot.catch` (registrado abaixo) só é chamado pelo laço interno de
+  // `handleUpdates` (usado por `bot.start()`, i.e. long polling). Tanto o
+  // `webhookCallback` do grammY (nosso modo de produção, ver scripts/
+  // set_webhook.ts) quanto os testes chamam `bot.handleUpdate` diretamente,
+  // que apenas relança o erro como uma Promise rejeitada — sem isso, uma
+  // falha do Sheets nunca chegaria a avisar o usuário, e ele acharia que o
+  // lançamento foi gravado quando na verdade a exceção estourou sem resposta.
+  bot.use(async (ctx, next) => {
+    try {
+      await next();
+    } catch (err) {
+      console.error("erro no handler:", err);
+      try {
+        await ctx.reply("⚠️ não consegui falar com a planilha agora. Tenta de novo em instantes.");
+      } catch (e) {
+        console.error("falhei até para avisar o usuário:", e);
+      }
+    }
+  });
+
   // Quem não está na allowlist não recebe resposta alguma — nem um erro.
   // Silêncio evita confirmar que o bot existe para quem descobriu o @.
   bot.use(async (ctx, next) => {
@@ -48,6 +72,19 @@ export function criarBot(
   // de "message:text" — senão o grammY encaminharia o comando para o parser de
   // valor primeiro, e ele nunca chegaria ao handler do comando.
   bot.command(["start", "ajuda", "help"], (ctx) => responder(ctx, dicaUso()));
+
+  bot.command("saldo", async (ctx) => {
+    // agoraLocal normaliza para wall-clock de SP antes de extrair o mês —
+    // sem isso, /saldo chamado de madrugada em UTC (mas ainda no dia/mês
+    // anterior em SP) consultaria o mês seguinte, adiantado.
+    const s = await ledger.saldo(mesDe(agoraLocal(agora())));
+    await responder(ctx, textoSaldo(s));
+  });
+
+  bot.command("extrato", async (ctx) => {
+    const { itens, temMais } = await ledger.extrato(0, PAGINA_EXTRATO);
+    await responder(ctx, textoExtrato(itens, 0, temMais));
+  });
 
   bot.on("message:text", async (ctx) => {
     const texto = ctx.message.text;
@@ -101,10 +138,51 @@ export function criarBot(
     await ctx.editMessageText(msg.text, { reply_markup: msg.reply_markup as never });
   });
 
+  bot.callbackQuery(/^d\|/, async (ctx) => {
+    const cb = decodeCallback(ctx.callbackQuery.data);
+    await ctx.answerCallbackQuery();
+    if (cb?.tipo !== "d") return;
+    const m = perguntaDescricao(cb.linha);
+    await ctx.reply(m.text, { reply_markup: m.reply_markup as never });
+  });
+
+  bot.callbackQuery(/^m\|/, async (ctx) => {
+    const cb = decodeCallback(ctx.callbackQuery.data);
+    await ctx.answerCallbackQuery();
+    if (cb?.tipo !== "m") return;
+    const m = textoSaldo(await ledger.saldo(cb.mes));
+    await ctx.editMessageText(m.text, { reply_markup: m.reply_markup as never });
+  });
+
+  bot.callbackQuery(/^x\|/, async (ctx) => {
+    const cb = decodeCallback(ctx.callbackQuery.data);
+    await ctx.answerCallbackQuery();
+    if (cb?.tipo !== "x") return;
+    const { itens, temMais } = await ledger.extrato(cb.offset, PAGINA_EXTRATO);
+    const m = textoExtrato(itens, cb.offset, temMais);
+    await ctx.editMessageText(m.text, {
+      reply_markup: (m.reply_markup ?? { inline_keyboard: [] }) as never,
+    });
+  });
+
   // Qualquer callback que não bata com os prefixos conhecidos: só apaga o spinner.
   bot.on("callback_query:data", (ctx) => ctx.answerCallbackQuery());
 
-  bot.catch((err) => console.error("erro no handler:", err));
+  // Só é exercido quando o bot roda via `bot.start()` (long polling); no modo
+  // de produção (webhookCallback) e nos testes, quem trata o erro é o
+  // `bot.use` acima. Mantido como rede de segurança adicional.
+  bot.catch(async (err) => {
+    console.error("erro no handler:", err.error);
+    // O usuário precisa saber que a ação não teve efeito; sem isso ele
+    // acha que gravou e não gravou.
+    try {
+      await err.ctx.reply(
+        "⚠️ não consegui falar com a planilha agora. Tenta de novo em instantes.",
+      );
+    } catch (e) {
+      console.error("falhei até para avisar o usuário:", e);
+    }
+  });
 
   return bot;
 }
