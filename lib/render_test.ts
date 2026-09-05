@@ -7,6 +7,7 @@ import {
   extrairLinha,
   linkWhatsApp,
   MAX_DESCRICAO,
+  MAX_QUEM,
   perguntaDescricao,
   perguntaTipo,
   textoExtrato,
@@ -162,6 +163,13 @@ Deno.test("truncagem não parte um emoji ao meio (evita URIError em encodeURICom
   const url = linkWhatsApp(l); // não deve lançar
   const texto = decodeURIComponent(url); // não lança se a string estiver bem formada
   assertStringIncludes(texto, "…");
+  // A reprodução mais severa do achado 1 foi justamente uma URL de 12100
+  // caracteres a partir de 1000 emoji — medir o comprimento aqui (e não só na
+  // descrição ASCII de outro teste) torna essa falha diretamente coberta.
+  assert(
+    url.length < 4096,
+    `linkWhatsApp com descrição em emoji produziu URL com ${url.length} caracteres, limite do Telegram é 4096`,
+  );
 });
 
 Deno.test("textoExtrato com dez linhas de descrição longa fica abaixo do limite de 4096", () => {
@@ -174,5 +182,25 @@ Deno.test("textoExtrato com dez linhas de descrição longa fica abaixo do limit
   assert(
     m.text.length < 4096,
     `textoExtrato com 10 linhas produziu ${m.text.length} caracteres, limite do Telegram é 4096`,
+  );
+});
+
+Deno.test("textoExtrato com dez linhas de descrição E nome em emoji fica abaixo do limite de 4096", () => {
+  // `quem` é nome de exibição do Telegram: entrada do usuário tanto quanto
+  // `descricao`, e igualmente capaz de ser emoji astral longo. Sem clampar os
+  // dois, a medição do revisor deu 4469 caracteres — acima de 4096 — mesmo
+  // com `descricao` já truncada, porque o excesso vinha inteiro de `quem`.
+  const descricaoEmEmoji = "😀".repeat(100); // bem acima de MAX_DESCRICAO
+  const quemEmEmoji = "🎉".repeat(50); // bem acima de MAX_QUEM
+  const dez: Lancamento[] = Array.from(
+    { length: 10 },
+    () => ({ ...lanc, descricao: descricaoEmEmoji, quem: quemEmEmoji }),
+  );
+  const m = textoExtrato(dez, 0, false);
+  assertStringIncludes(m.text, "😀".repeat(MAX_DESCRICAO) + "…");
+  assertStringIncludes(m.text, "🎉".repeat(MAX_QUEM) + "…");
+  assert(
+    m.text.length < 4096,
+    `textoExtrato com 10 linhas (descrição e nome em emoji) produziu ${m.text.length} caracteres, limite do Telegram é 4096`,
   );
 });

@@ -11,19 +11,21 @@ export interface Mensagem {
 export const PAGINA_EXTRATO = 10;
 
 /**
- * Limite de caracteres para a descrição exibida/embutida em mensagens e na URL
- * do WhatsApp. Sem isso, uma descrição longa pode estourar o limite de 4096
- * caracteres do `sendMessage` do Telegram — e, pior, uma vez gravada na
- * planilha, quebraria permanentemente qualquer página de `/extrato` que a
- * incluísse. Truncar aqui repara também as linhas que já existem na planilha.
+ * Limites de caracteres para textos de entrada livre do usuário (descrição e
+ * nome de exibição do Telegram) embutidos em mensagens e na URL do WhatsApp.
+ * Sem isso, um valor longo pode estourar o limite de 4096 caracteres do
+ * `sendMessage` do Telegram — e, pior, uma vez gravado na planilha,
+ * quebraria permanentemente qualquer página de `/extrato` que o incluísse.
+ * Truncar aqui repara também as linhas que já existem na planilha.
  */
 export const MAX_DESCRICAO = 80;
+export const MAX_QUEM = 32;
 
-function truncarDescricao(descricao: string): string {
+function truncar(texto: string, max: number): string {
   // Itera por code point (não por unidade UTF-16) para nunca partir um
   // emoji ao meio — um surrogate solto quebraria encodeURIComponent.
-  const pontos = Array.from(descricao);
-  return pontos.length > MAX_DESCRICAO ? `${pontos.slice(0, MAX_DESCRICAO).join("")}…` : descricao;
+  const pontos = Array.from(texto);
+  return pontos.length > max ? `${pontos.slice(0, max).join("")}…` : texto;
 }
 
 const SETA: Record<Lancamento["tipo"], string> = { Entrada: "⬇️", Saída: "⬆️" };
@@ -48,8 +50,10 @@ export function perguntaTipo(centavos: number): Mensagem {
 
 /** Texto enviado ao WhatsApp; também é a base da mensagem de confirmação. */
 function resumo(l: Lancamento): string {
-  const desc = l.descricao ? ` · ${truncarDescricao(l.descricao)}` : "";
-  return `${l.tipo} de R$ ${formatarBRL(l.centavos)}${desc} · ${ddMM(l.data)} · ${l.quem}`;
+  const desc = l.descricao ? ` · ${truncar(l.descricao, MAX_DESCRICAO)}` : "";
+  return `${l.tipo} de R$ ${formatarBRL(l.centavos)}${desc} · ${ddMM(l.data)} · ${
+    truncar(l.quem, MAX_QUEM)
+  }`;
 }
 
 export function linkWhatsApp(l: Lancamento): string {
@@ -143,8 +147,8 @@ export function textoExtrato(ls: Lancamento[], offset: number, temMais: boolean)
   }
   const linhas = ls.map((l) =>
     `${ddMM(l.data)}  ${SETA[l.tipo]} ${formatarBRL(l.centavos).padStart(10)}  ${
-      l.descricao ? truncarDescricao(l.descricao) : "—"
-    }  ·  ${l.quem}`
+      l.descricao ? truncar(l.descricao, MAX_DESCRICAO) : "—"
+    }  ·  ${truncar(l.quem, MAX_QUEM)}`
   );
   const msg: Mensagem = { text: linhas.join("\n") };
   if (temMais) {
