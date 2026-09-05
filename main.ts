@@ -17,9 +17,39 @@ export function montarPermitidos(bruto: string): Set<number> {
 }
 
 /**
- * Envolve o handler do grammY com duas garantias:
- * só POST /webhook é processado, e a resposta é SEMPRE 200 —
- * um 500 faria o Telegram reentregar o mesmo update indefinidamente.
+ * Chama montarPermitidos e falha alto se o resultado vier vazio. Um typo
+ * plausível em ALLOWED_USER_IDS (IDs separados por espaço em vez de vírgula,
+ * um "@usuario" colado, um comentário no fim) passa batido pelo filtro de
+ * montarPermitidos e produz um Set vazio — o bot sobe, responde 200 pra
+ * todo update e não fala com ninguém, porque o middleware de allowlist
+ * derruba tudo em silêncio por design. Sem esta guarda, esse typo é
+ * indistinguível de um deploy morto: getWebhookInfo fica limpo, não sobra
+ * log nenhum dizendo por quê. lerEnv já falha alto para a env ausente; esta
+ * função fecha o mesmo buraco para a env presente mas ilegível.
+ */
+export function exigirPermitidos(bruto: string): Set<number> {
+  const permitidos = montarPermitidos(bruto);
+  if (permitidos.size === 0) {
+    throw new Error(
+      "ALLOWED_USER_IDS não contém nenhum ID válido — confira o formato (números separados por vírgula)",
+    );
+  }
+  return permitidos;
+}
+
+/**
+ * Envolve o handler do grammY com duas garantias: só POST /webhook é
+ * processado, e uma EXCEÇÃO nunca vira 500 — um 500 faria o Telegram
+ * reentregar o mesmo update indefinidamente, então aqui ela vira 200.
+ *
+ * Exceção deliberada: se handleUpdate RESOLVER normalmente com um status
+ * diferente de 200, essa resposta passa direto — não é forçada a 200. O
+ * grammY devolve 401 quando o secret_token do pedido não bate com
+ * WEBHOOK_SECRET, e isso só acontece por um erro de configuração (os dois
+ * divergiram). É exatamente esse tipo de erro que precisa aparecer em
+ * last_error_message no getWebhookInfo, que é o caminho de depuração que o
+ * README indica; disfarçar de 200 esconderia um webhook mal configurado
+ * atrás de um bot aparentemente saudável.
  */
 export function criarHandler(
   handleUpdate: (req: Request) => Promise<Response>,
@@ -45,7 +75,7 @@ if (import.meta.main) {
 
   const bot = criarBot({
     token: lerEnv("BOT_TOKEN"),
-    permitidos: montarPermitidos(lerEnv("ALLOWED_USER_IDS")),
+    permitidos: exigirPermitidos(lerEnv("ALLOWED_USER_IDS")),
     ledger,
   });
 

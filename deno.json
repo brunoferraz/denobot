@@ -1,10 +1,10 @@
 {
   "tasks": {
-    "dev": "deno run --allow-net --allow-env --watch main.ts",
+    "dev": "deno run --allow-net --allow-env --env-file --watch main.ts",
     "test": "deno test --allow-env",
     "check": "deno check && deno lint && deno fmt --check",
-    "set-webhook": "deno run --allow-net --allow-env scripts/set_webhook.ts",
-    "bootstrap-sheet": "deno run --allow-net --allow-env scripts/bootstrap_sheet.ts"
+    "set-webhook": "deno run --allow-net --allow-env --env-file scripts/set_webhook.ts",
+    "bootstrap-sheet": "deno run --allow-net --allow-env --env-file scripts/bootstrap_sheet.ts"
   },
   "imports": {
     "grammy": "npm:grammy@^1.30.0",
