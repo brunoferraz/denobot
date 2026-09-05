@@ -10,6 +10,22 @@ export interface Mensagem {
 
 export const PAGINA_EXTRATO = 10;
 
+/**
+ * Limite de caracteres para a descrição exibida/embutida em mensagens e na URL
+ * do WhatsApp. Sem isso, uma descrição longa pode estourar o limite de 4096
+ * caracteres do `sendMessage` do Telegram — e, pior, uma vez gravada na
+ * planilha, quebraria permanentemente qualquer página de `/extrato` que a
+ * incluísse. Truncar aqui repara também as linhas que já existem na planilha.
+ */
+export const MAX_DESCRICAO = 80;
+
+function truncarDescricao(descricao: string): string {
+  // Itera por code point (não por unidade UTF-16) para nunca partir um
+  // emoji ao meio — um surrogate solto quebraria encodeURIComponent.
+  const pontos = Array.from(descricao);
+  return pontos.length > MAX_DESCRICAO ? `${pontos.slice(0, MAX_DESCRICAO).join("")}…` : descricao;
+}
+
 const SETA: Record<Lancamento["tipo"], string> = { Entrada: "⬇️", Saída: "⬆️" };
 
 export function perguntaTipo(centavos: number): Mensagem {
@@ -32,7 +48,7 @@ export function perguntaTipo(centavos: number): Mensagem {
 
 /** Texto enviado ao WhatsApp; também é a base da mensagem de confirmação. */
 function resumo(l: Lancamento): string {
-  const desc = l.descricao ? ` · ${l.descricao}` : "";
+  const desc = l.descricao ? ` · ${truncarDescricao(l.descricao)}` : "";
   return `${l.tipo} de R$ ${formatarBRL(l.centavos)}${desc} · ${ddMM(l.data)} · ${l.quem}`;
 }
 
@@ -52,7 +68,7 @@ export function confirmacao(l: Lancamento, linha: number): Mensagem {
   return { text: `✅ ${resumo(l)}`, reply_markup: { inline_keyboard: teclado } };
 }
 
-const MARCADOR = /#(\d+)\s*$/;
+const MARCADOR = /^Qual foi o gasto\? #(\d+)$/;
 
 export function perguntaDescricao(linha: number): Mensagem {
   return {
@@ -127,7 +143,7 @@ export function textoExtrato(ls: Lancamento[], offset: number, temMais: boolean)
   }
   const linhas = ls.map((l) =>
     `${ddMM(l.data)}  ${SETA[l.tipo]} ${formatarBRL(l.centavos).padStart(10)}  ${
-      l.descricao || "—"
+      l.descricao ? truncarDescricao(l.descricao) : "—"
     }  ·  ${l.quem}`
   );
   const msg: Mensagem = { text: linhas.join("\n") };

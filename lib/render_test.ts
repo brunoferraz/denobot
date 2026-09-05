@@ -6,6 +6,7 @@ import {
   erroValor,
   extrairLinha,
   linkWhatsApp,
+  MAX_DESCRICAO,
   perguntaDescricao,
   perguntaTipo,
   textoExtrato,
@@ -110,4 +111,68 @@ Deno.test("textoExtrato lista lançamentos e pagina só quando há mais", () => 
 
 Deno.test("textoExtrato lida com planilha vazia", () => {
   assertStringIncludes(textoExtrato([], 0, false).text, "nenhum lançamento");
+});
+
+Deno.test("confirmacao com descrição já preenchida traz só o botão de compartilhar", () => {
+  const m = confirmacao(lanc, 42);
+  const kb = (m.reply_markup as {
+    inline_keyboard: Array<Array<{ callback_data?: string; url?: string }>>;
+  }).inline_keyboard;
+  assertEquals(kb.length, 1);
+  assertEquals(kb[0].length, 1);
+  assertEquals(kb[0][0].callback_data, undefined);
+  assert(kb[0][0].url!.startsWith("https://wa.me/?text="));
+});
+
+Deno.test("extrairLinha não confunde nome de usuário terminado em '#N' com o marcador", () => {
+  // `resumo` termina em "· <quem>" e um nome de usuário no Telegram pode ser
+  // qualquer coisa, inclusive "Ana #2" — não pode disparar o mesmo marcador
+  // que "Qual foi o gasto? #2".
+  assertEquals(extrairLinha("Saída de R$ 10,00 · mercado · 04/09 · Ana #2"), null);
+});
+
+const descricaoLonga = "a".repeat(4000);
+const descricaoTruncada = descricaoLonga.slice(0, MAX_DESCRICAO) + "…";
+
+Deno.test("descrição muito longa é truncada em confirmacao().text e no link do WhatsApp", () => {
+  const l: Lancamento = { ...lanc, descricao: descricaoLonga };
+
+  assertEquals(descricaoTruncada.length, MAX_DESCRICAO + 1);
+
+  const conf = confirmacao(l, 42);
+  assertStringIncludes(conf.text, descricaoTruncada);
+  assert(!conf.text.includes(descricaoLonga));
+  assert(
+    conf.text.length < 200,
+    `confirmacao().text tem ${conf.text.length} caracteres, esperado bem abaixo de 4096`,
+  );
+
+  const url = linkWhatsApp(l);
+  assert(
+    url.length < 4096,
+    `linkWhatsApp produziu URL com ${url.length} caracteres, limite do Telegram é 4096`,
+  );
+});
+
+Deno.test("truncagem não parte um emoji ao meio (evita URIError em encodeURIComponent)", () => {
+  // "x" + 100 emoji de par substituto: uma truncagem ingênua por unidade
+  // UTF-16 (slice(0, 80)) cai bem no meio do par na posição 79/80 e deixa um
+  // surrogate solto — o que faz encodeURIComponent lançar "URI malformed".
+  const l: Lancamento = { ...lanc, descricao: "x" + "😀".repeat(100) };
+  const url = linkWhatsApp(l); // não deve lançar
+  const texto = decodeURIComponent(url); // não lança se a string estiver bem formada
+  assertStringIncludes(texto, "…");
+});
+
+Deno.test("textoExtrato com dez linhas de descrição longa fica abaixo do limite de 4096", () => {
+  const dez: Lancamento[] = Array.from(
+    { length: 10 },
+    () => ({ ...lanc, descricao: descricaoLonga }),
+  );
+  const m = textoExtrato(dez, 0, false);
+  assertStringIncludes(m.text, descricaoTruncada);
+  assert(
+    m.text.length < 4096,
+    `textoExtrato com 10 linhas produziu ${m.text.length} caracteres, limite do Telegram é 4096`,
+  );
 });
