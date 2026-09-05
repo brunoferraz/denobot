@@ -284,6 +284,31 @@ removê-lo.
 
 Segredos vivem exclusivamente em variáveis de ambiente. A chave da service account nunca entra no repositório.
 
+### Marcação nas mensagens (revisão de 05/09/2026)
+
+Por padrão **nenhuma mensagem usa `parse_mode`**: descrição e nome de exibição
+são texto livre do usuário, e sem marcação não há o que escapar.
+
+**Exceção, para as duas tabelas.** `/saldo` e `/extrato` vão dentro de `<pre>`
+com `parse_mode: "HTML"`. A fonte padrão do Telegram é proporcional, então
+`padEnd`/`padStart` não alinham coluna alguma — o alinhamento existia no código
+e não na tela, verificado em captura real. Para uma tabela de valores, alinhar é
+requisito de leitura.
+
+Mitigação do custo: `escaparHTML` converte `&`, `<` e `>` — os três caracteres
+que o modo HTML do Telegram trata — e **toda** interpolação de texto do usuário
+nessas duas mensagens passa por ele. A ordem importa: trunca primeiro e escapa
+depois (o inverso partiria uma entidade ao meio), e o `&` é substituído antes
+dos outros dois. Um teste tenta injetar `<b>` e `</pre>` pela descrição e pelo
+nome; outro exige `parse_mode` no envio, porque o defeito de não propagá-lo mora
+em `bot.ts` e nenhuma asserção de `render.ts` o alcançaria.
+
+As colunas do extrato têm largura própria (`COL_DESCRICAO`, `COL_QUEM`), menor
+que os limites gerais de exibição: coluna fixa é o que torna a tabela legível, e
+o escape pode quintuplicar um texto, o que estouraria o teto de 4096 caracteres
+numa página cheia.
+
+
 ## 10. Configuração
 
 | Variável | Conteúdo |
