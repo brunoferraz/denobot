@@ -1,0 +1,154 @@
+import { type ErroValor, formatarBRL } from "./money.ts";
+import type { Lancamento, Saldo } from "./types.ts";
+import { encodeCallback } from "./callback.ts";
+import { ddMM, mesAnterior, mesPorExtenso, mesSeguinte } from "./tempo.ts";
+
+export interface Mensagem {
+  text: string;
+  reply_markup?: unknown;
+}
+
+export const PAGINA_EXTRATO = 10;
+
+const SETA: Record<Lancamento["tipo"], string> = { Entrada: "⬇️", Saída: "⬆️" };
+
+export function perguntaTipo(centavos: number): Mensagem {
+  return {
+    text: `R$ ${formatarBRL(centavos)} — entrada ou saída?`,
+    reply_markup: {
+      inline_keyboard: [[
+        {
+          text: "⬇️ Entrada",
+          callback_data: encodeCallback({ tipo: "n", lancamento: "Entrada", centavos }),
+        },
+        {
+          text: "⬆️ Saída",
+          callback_data: encodeCallback({ tipo: "n", lancamento: "Saída", centavos }),
+        },
+      ]],
+    },
+  };
+}
+
+/** Texto enviado ao WhatsApp; também é a base da mensagem de confirmação. */
+function resumo(l: Lancamento): string {
+  const desc = l.descricao ? ` · ${l.descricao}` : "";
+  return `${l.tipo} de R$ ${formatarBRL(l.centavos)}${desc} · ${ddMM(l.data)} · ${l.quem}`;
+}
+
+export function linkWhatsApp(l: Lancamento): string {
+  return `https://wa.me/?text=${encodeURIComponent(resumo(l))}`;
+}
+
+export function confirmacao(l: Lancamento, linha: number): Mensagem {
+  const teclado: Array<Array<Record<string, string>>> = [];
+  if (!l.descricao) {
+    teclado.push([{
+      text: "✏️ Qual foi o gasto?",
+      callback_data: encodeCallback({ tipo: "d", linha }),
+    }]);
+  }
+  teclado.push([{ text: "📤 Compartilhar", url: linkWhatsApp(l) }]);
+  return { text: `✅ ${resumo(l)}`, reply_markup: { inline_keyboard: teclado } };
+}
+
+const MARCADOR = /#(\d+)\s*$/;
+
+export function perguntaDescricao(linha: number): Mensagem {
+  return {
+    text: `Qual foi o gasto? #${linha}`,
+    reply_markup: {
+      force_reply: true,
+      input_field_placeholder: "ex.: mercado",
+    },
+  };
+}
+
+/** Recupera o número da linha embutido em "Qual foi o gasto? #42". */
+export function extrairLinha(texto: string): number | null {
+  const m = texto.match(MARCADOR);
+  return m ? Number(m[1]) : null;
+}
+
+const MOTIVOS: Record<ErroValor, string> = {
+  formato: "não consegui ler isso como um valor.",
+  zero: "o valor precisa ser maior que zero.",
+  negativo: "manda o valor sem sinal — o tipo você escolhe no botão.",
+  "muito-alto": "esse valor passa do limite de R$ 1.000.000,00.",
+};
+
+export function erroValor(entrada: string, erro: ErroValor): Mensagem {
+  return {
+    text: [
+      `❌ "${entrada}" — ${MOTIVOS[erro]}`,
+      "",
+      "Manda de novo — aceito assim:",
+      "   50        50,90       1.234,56",
+      "   R$ 12,30  1234.56",
+    ].join("\n"),
+    reply_markup: {
+      force_reply: true,
+      input_field_placeholder: "valor, ex.: 50,90",
+    },
+  };
+}
+
+export function textoSaldo(s: Saldo): Mensagem {
+  const linha = (rotulo: string, centavos: number) =>
+    `  ${rotulo.padEnd(10)} R$ ${formatarBRL(centavos).padStart(12)}`;
+
+  const teclado = [[
+    {
+      text: `◀️ ${mesPorExtenso(mesAnterior(s.mes)).split("/")[0]}`,
+      callback_data: encodeCallback({ tipo: "m", mes: mesAnterior(s.mes) }),
+    },
+    {
+      text: `${mesPorExtenso(mesSeguinte(s.mes)).split("/")[0]} ▶️`,
+      callback_data: encodeCallback({ tipo: "m", mes: mesSeguinte(s.mes) }),
+    },
+  ]];
+
+  return {
+    text: [
+      `📅 ${mesPorExtenso(s.mes)}`,
+      linha("Entradas", s.entradasCentavos),
+      linha("Saídas", s.saidasCentavos),
+      linha("Resultado", s.resultadoCentavos),
+      "",
+      `Σ Acumulado geral  R$ ${formatarBRL(s.acumuladoCentavos)}`,
+    ].join("\n"),
+    reply_markup: { inline_keyboard: teclado },
+  };
+}
+
+export function textoExtrato(ls: Lancamento[], offset: number, temMais: boolean): Mensagem {
+  if (ls.length === 0) {
+    return { text: "Ainda não há nenhum lançamento registrado." };
+  }
+  const linhas = ls.map((l) =>
+    `${ddMM(l.data)}  ${SETA[l.tipo]} ${formatarBRL(l.centavos).padStart(10)}  ${
+      l.descricao || "—"
+    }  ·  ${l.quem}`
+  );
+  const msg: Mensagem = { text: linhas.join("\n") };
+  if (temMais) {
+    msg.reply_markup = {
+      inline_keyboard: [[{
+        text: `⬇️ Ver mais ${PAGINA_EXTRATO}`,
+        callback_data: encodeCallback({ tipo: "x", offset: offset + PAGINA_EXTRATO }),
+      }]],
+    };
+  }
+  return msg;
+}
+
+export function dicaUso(): Mensagem {
+  return {
+    text: [
+      "Manda um valor para registrar um lançamento. Ex.: 50 · 12,90 · 1.234,56",
+      "",
+      "/saldo — resumo do mês e acumulado",
+      "/extrato — últimos lançamentos",
+    ].join("\n"),
+  };
+}
