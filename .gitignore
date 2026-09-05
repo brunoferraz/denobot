@@ -1,0 +1,4 @@
+.env
+*.local
+service-account*.json
+.DS_Store
