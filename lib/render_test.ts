@@ -271,3 +271,38 @@ Deno.test("a âncora do marcador continua fechada para as duas perguntas", () =>
   assertEquals(extrairLinha("Qual a fonte do dinheiro? #7 · Ana #2"), null);
   assertEquals(extrairLinha("prefixo Qual a fonte do dinheiro? #7"), null);
 });
+
+Deno.test("ícones: setas indicam a natureza do lançamento", () => {
+  const kb = (perguntaTipo(5000).reply_markup as {
+    inline_keyboard: Array<Array<{ text: string }>>;
+  }).inline_keyboard[0];
+  assertStringIncludes(kb[0].text, "\u2197\uFE0F"); // ArrowUpRight = entrada
+  assertStringIncludes(kb[1].text, "\u2198\uFE0F"); // ArrowDownRight = saída
+
+  assertStringIncludes(textoExtrato([{ ...lanc, tipo: "Saída" }], 0, false).text, "\u2198\uFE0F");
+  assertStringIncludes(textoExtrato([{ ...lanc, tipo: "Entrada" }], 0, false).text, "\u2197\uFE0F");
+});
+
+Deno.test("ícones: sinal do saldo usa mais/menos, não seta", () => {
+  const base = { mes: "2026-09", entradasCentavos: 200000, saidasCentavos: 35000 };
+
+  const positivo = textoSaldo({ ...base, resultadoCentavos: 165000, acumuladoCentavos: 482000 });
+  assertStringIncludes(positivo.text, "\u2795 Resultado");
+  assertStringIncludes(positivo.text, "\u2795 Acumulado");
+  assert(!positivo.text.includes("\u2796"), "resultado positivo não deve trazer menos");
+
+  const negativo = textoSaldo({ ...base, resultadoCentavos: -165000, acumuladoCentavos: -482000 });
+  assertStringIncludes(negativo.text, "\u2796 Resultado");
+  assertStringIncludes(negativo.text, "\u2796 Acumulado");
+  // o número mantém o sinal: o ícone reforça, não substitui
+  assertStringIncludes(negativo.text, "-1.650,00");
+});
+
+Deno.test("ícones: o 'Ver mais' continua sendo seta para baixo", () => {
+  // Aqui a seta significa "há mais abaixo", não "entrada" — trocá-la por ↙️
+  // seria um busca-e-substitui cego.
+  const kb = (textoExtrato([lanc], 0, true).reply_markup as {
+    inline_keyboard: Array<Array<{ text: string }>>;
+  }).inline_keyboard;
+  assertStringIncludes(kb[0][0].text, "\u2B07\uFE0F");
+});

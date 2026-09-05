@@ -33,7 +33,11 @@ function truncar(texto: string, max: number): string {
   return pontos.length > max ? `${pontos.slice(0, max).join("")}…` : texto;
 }
 
-const SETA: Record<Lancamento["tipo"], string> = { Entrada: "⬇️", Saída: "⬆️" };
+/** A seta diz a NATUREZA do lançamento: o que entra sobe, o que sai desce. */
+const SETA: Record<Lancamento["tipo"], string> = { Entrada: "↗️", Saída: "↘️" };
+
+/** O sinal diz o EFEITO no bolso — outra informação, outro ícone. */
+const SINAL = (centavos: number) => (centavos < 0 ? "➖" : "➕");
 
 export function perguntaTipo(centavos: number): Mensagem {
   return {
@@ -41,11 +45,11 @@ export function perguntaTipo(centavos: number): Mensagem {
     reply_markup: {
       inline_keyboard: [[
         {
-          text: "⬇️ Entrada",
+          text: "↗️ Entrada",
           callback_data: encodeCallback({ tipo: "n", lancamento: "Entrada", centavos }),
         },
         {
-          text: "⬆️ Saída",
+          text: "↘️ Saída",
           callback_data: encodeCallback({ tipo: "n", lancamento: "Saída", centavos }),
         },
       ]],
@@ -134,8 +138,10 @@ export function erroValor(entrada: string, erro: ErroValor): Mensagem {
 }
 
 export function textoSaldo(s: Saldo): Mensagem {
-  const linha = (rotulo: string, centavos: number) =>
-    `  ${rotulo.padEnd(10)} R$ ${formatarBRL(centavos).padStart(12)}`;
+  // O prefixo ocupa a mesma largura dos dois espaços do padrão, para o ícone do
+  // sinal não desalinhar as linhas que não o têm.
+  const linha = (rotulo: string, centavos: number, prefixo = "  ") =>
+    `${prefixo}${rotulo.padEnd(10)} R$ ${formatarBRL(centavos).padStart(12)}`;
 
   const teclado = [[
     {
@@ -153,9 +159,9 @@ export function textoSaldo(s: Saldo): Mensagem {
       `📅 ${mesPorExtenso(s.mes)}`,
       linha("Entradas", s.entradasCentavos),
       linha("Saídas", s.saidasCentavos),
-      linha("Resultado", s.resultadoCentavos),
+      linha("Resultado", s.resultadoCentavos, `${SINAL(s.resultadoCentavos)} `),
       "",
-      `Σ Acumulado geral  R$ ${formatarBRL(s.acumuladoCentavos)}`,
+      `${SINAL(s.acumuladoCentavos)} Acumulado geral  R$ ${formatarBRL(s.acumuladoCentavos)}`,
     ].join("\n"),
     reply_markup: { inline_keyboard: teclado },
   };
