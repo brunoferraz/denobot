@@ -114,11 +114,24 @@ export function criarBot(
     if (linha !== null && Number.isSafeInteger(linha) && linha >= 2) {
       const descricao = clampDescricao(texto.trim());
       await ledger.descrever(linha, descricao);
-      // Ecoa o valor JÁ clampado: se o eco levasse o texto bruto, uma
-      // descrição gigante estouraria o limite de 4096 chars do sendMessage
-      // depois que a linha já foi gravada — o usuário ficaria sem confirmação
-      // nenhuma de uma gravação que, na verdade, deu certo.
-      await ctx.reply(`✏️ Descrição salva: ${descricao}`);
+      // §6.2: depois de descrever, a confirmação final precisa reaparecer
+      // com a descrição embutida e o botão de compartilhar — senão o botão
+      // da confirmação original (a que já existe na conversa) continua
+      // codificando o texto SEM descrição, e compartilhar o lançamento
+      // junto com a descrição fica inalcançável. bot.ts não guardou o
+      // lançamento entre as duas mensagens (é stateless), então relê a
+      // linha já gravada — a planilha é a única fonte de verdade (D5) — em
+      // vez de tentar carregar o valor/tipo/quem por algum outro canal.
+      const l = await ledger.obterLancamento(linha);
+      if (l) {
+        const msg = confirmacao(l, linha);
+        await ctx.reply(msg.text, { reply_markup: msg.reply_markup as never });
+      } else {
+        // Linha sumiu ou foi corrompida entre o descrever e esta releitura
+        // (edição manual concorrente, por exemplo): ainda confirma que a
+        // descrição foi salva, só sem poder reconstruir o resumo completo.
+        await ctx.reply(`✏️ Descrição salva: ${descricao}`);
+      }
       return;
     }
 

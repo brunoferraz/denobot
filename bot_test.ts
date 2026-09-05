@@ -52,6 +52,17 @@ function ledgerFalso(over: Partial<Ledger> = {}) {
     async extrato() {
       return { itens: [], temMais: false };
     },
+    // deno-lint-ignore require-await
+    async obterLancamento(linha) {
+      const ultima = [...descricoes].reverse().find((d) => d.linha === linha);
+      return {
+        data: new Date("2026-09-04T00:00:00Z"),
+        tipo: "Saída",
+        centavos: 5000,
+        descricao: ultima?.descricao ?? "",
+        quem: "Bruno",
+      };
+    },
     ...over,
   };
   return { ledger, registros, descricoes };
@@ -245,8 +256,50 @@ Deno.test("resposta ao marcador de descrição nunca é tratada como valor, mesm
   assertEquals(descricoes[0], { linha: 42, descricao: "50 pães" });
   assertEquals(chamadas.length, 1);
   assertEquals(chamadas[0].method, "sendMessage");
-  assertStringIncludes(String(chamadas[0].payload.text), "Descrição salva");
+  assertStringIncludes(String(chamadas[0].payload.text), "50 pães");
 });
+
+Deno.test("§6.2: depois de descrever, reaparece a confirmação com a descrição e só o botão de compartilhar", async () => {
+  const { ledger } = ledgerFalso();
+  const { bot, chamadas } = montar(ledger);
+  await bot.handleUpdate(
+    updTexto("mercado", { reply_to_message: { text: "Qual foi o gasto? #42" } }),
+  );
+
+  const envio = chamadas.find((c) => c.method === "sendMessage")!;
+  assertStringIncludes(String(envio.payload.text), "mercado");
+  assertStringIncludes(String(envio.payload.text), "✅");
+
+  const kb = (envio.payload.reply_markup as {
+    inline_keyboard: Array<Array<{ callback_data?: string; url?: string }>>;
+  }).inline_keyboard;
+  // Sem o botão ✏️ (a descrição já foi preenchida) e com o botão de URL do
+  // WhatsApp — sem isso, o botão de compartilhar da confirmação ORIGINAL
+  // continuaria carregando o texto sem descrição, e não haveria como
+  // compartilhar o lançamento junto com ela.
+  assertEquals(kb.length, 1);
+  assertEquals(kb[0].length, 1);
+  assertEquals(kb[0][0].callback_data, undefined);
+  assert(kb[0][0].url?.startsWith("https://wa.me/?text="));
+});
+
+Deno.test(
+  "se a linha some entre descrever e a releitura, ainda confirma a descrição salva sem quebrar",
+  async () => {
+    const { ledger } = ledgerFalso({
+      // deno-lint-ignore require-await
+      async obterLancamento() {
+        return null;
+      },
+    });
+    const { bot, chamadas } = montar(ledger);
+    await bot.handleUpdate(
+      updTexto("mercado", { reply_to_message: { text: "Qual foi o gasto? #42" } }),
+    );
+
+    assertStringIncludes(String(chamadas[0].payload.text), "Descrição salva: mercado");
+  },
+);
 
 Deno.test("descrição longa é truncada em MAX_DESCRICAO antes de gravar, e o eco também vem clampado", async () => {
   const { ledger, descricoes } = ledgerFalso();

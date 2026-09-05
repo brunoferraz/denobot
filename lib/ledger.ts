@@ -14,6 +14,15 @@ export interface Ledger {
   descrever(linha: number, descricao: string): Promise<void>;
   saldo(mes: string): Promise<Saldo>;
   extrato(offset: number, limite: number): Promise<{ itens: Lancamento[]; temMais: boolean }>;
+  /**
+   * Relê uma única linha já gravada. Existe para o fluxo de §6.2: depois de
+   * `descrever`, o bot precisa reconstruir a confirmação completa (valor,
+   * tipo, quem) para reexibi-la com a descrição e o botão de compartilhar —
+   * e a planilha é a única fonte dessas informações, já que bot.ts não guarda
+   * estado entre as duas mensagens. Devolve null se a linha estiver
+   * corrompida, pelo mesmo critério de paraLancamento.
+   */
+  obterLancamento(linha: number): Promise<Lancamento | null>;
 }
 
 function ehTipo(v: unknown): v is TipoLancamento {
@@ -73,6 +82,11 @@ export function criarLedger(sheets: SheetsClient): Ledger {
 
     async descrever(linha, descricao) {
       await sheets.update(`${ABA}!D${linha}`, [[descricao]]);
+    },
+
+    async obterLancamento(linha) {
+      const linhas = await sheets.get(`${ABA}!A${linha}:E${linha}`);
+      return linhas[0] ? paraLancamento(linhas[0]) : null;
     },
 
     async saldo(mes) {

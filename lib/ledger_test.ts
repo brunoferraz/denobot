@@ -4,6 +4,23 @@ import type { Lancamento } from "./types.ts";
 import { serialParaDate } from "./tempo.ts";
 import { criarLedger } from "./ledger.ts";
 
+/**
+ * Lê os limites de uma faixa tipo "Lançamentos!A3:E3" ou "Lançamentos!F2:F"
+ * (sem linha final = até o fim). Índices de coluna e de linha de dados
+ * (0-based, já descontando o cabeçalho da linha 1).
+ */
+function parseRange(range: string) {
+  const m = range.match(/!([A-Z]+)(\d+):([A-Z]+)(\d+)?$/);
+  if (!m) throw new Error(`range de teste não suportado: ${range}`);
+  const [, colIni, linIni, colFim, linFimRaw] = m;
+  const idx = (letra: string) => letra.charCodeAt(0) - 65;
+  const colunas: number[] = [];
+  for (let i = idx(colIni); i <= idx(colFim); i++) colunas.push(i);
+  const inicio = Number(linIni) - 2;
+  const fim = linFimRaw !== undefined ? Number(linFimRaw) - 2 + 1 : undefined;
+  return { colunas, inicio, fim };
+}
+
 /** Planilha falsa em memória: cada item é uma linha A..F. */
 function sheetsFalso(linhas: unknown[][] = []) {
   const dados = linhas.map((l) => [...l]);
@@ -15,12 +32,9 @@ function sheetsFalso(linhas: unknown[][] = []) {
     },
     // deno-lint-ignore require-await
     async get(range) {
-      const colunas = range.includes("!F")
-        ? [5]
-        : range.includes("A2:C")
-        ? [0, 1, 2]
-        : [0, 1, 2, 3, 4];
-      return dados.map((l) => colunas.map((i) => l[i]));
+      const { colunas, inicio, fim } = parseRange(range);
+      const selecionadas = fim !== undefined ? dados.slice(inicio, fim) : dados.slice(inicio);
+      return selecionadas.map((l) => colunas.map((i) => l[i]));
     },
     // deno-lint-ignore require-await
     async update(range, valores) {
@@ -216,4 +230,27 @@ Deno.test("linha com valor negativo (edição manual) é rejeitada, não vira ga
 
   const extrato = await ledger.extrato(0, 10);
   assertEquals(extrato.itens.length, 1, "a linha negativa deveria ser excluída do extrato também");
+});
+
+Deno.test("obterLancamento relê uma linha já gravada pelo número", async () => {
+  const { client } = sheetsFalso([
+    [SERIAL_04_09, "Saída", 50, "", "Bruno", 7],
+    [SERIAL_04_09, "Entrada", 30, "salário", "Ana", 8],
+  ]);
+  const ledger = criarLedger(client);
+
+  const l = await ledger.obterLancamento(3);
+  assertEquals(l?.tipo, "Entrada");
+  assertEquals(l?.centavos, 3000);
+  assertEquals(l?.descricao, "salário");
+  assertEquals(l?.quem, "Ana");
+});
+
+Deno.test("obterLancamento devolve null para linha inexistente ou corrompida", async () => {
+  const { client } = sheetsFalso([
+    [SERIAL_04_09, "Saída", 50, "", "Bruno", 7],
+  ]);
+  const ledger = criarLedger(client);
+
+  assertEquals(await ledger.obterLancamento(99), null);
 });
