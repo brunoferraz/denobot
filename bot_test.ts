@@ -56,13 +56,13 @@ function ledgerFalso(over: Partial<Ledger> = {}) {
   return { ledger, registros, descricoes };
 }
 
-export function montar(ledger: Ledger) {
+export function montar(ledger: Ledger, agora: () => Date = () => new Date("2026-09-04T17:32:00Z")) {
   const chamadas: Chamada[] = [];
   const bot = criarBot({
     token: "12345:fake",
     permitidos: new Set([EU]),
     ledger,
-    agora: () => new Date("2026-09-04T17:32:00Z"),
+    agora,
     botInfo: BOT_INFO,
   });
   bot.api.config.use((_prev, method, payload) => {
@@ -162,11 +162,28 @@ Deno.test("botão Saída grava o lançamento e edita a mensagem", async () => {
   assertEquals(registros[0].l.centavos, 5000);
   assertEquals(registros[0].l.quem, "Bruno");
   assertEquals(registros[0].updateId, 777);
+  // 2026-09-04T17:32:00Z cai no mesmo dia em UTC e em São Paulo (17:32 -> 14:32,
+  // UTC-3) — então isto só prova que agoraLocal normaliza a hora, não que ela
+  // evita a virada de dia. O teste de madrugada logo abaixo cobre esse caso.
+  assertEquals(registros[0].l.data.toISOString(), "2026-09-04T14:32:00.000Z");
 
   const editar = chamadas.find((c) => c.method === "editMessageText");
   assert(editar, "deveria editar a mensagem original");
   assertStringIncludes(String(editar.payload.text), "R$ 50,00");
   assert(chamadas.some((c) => c.method === "answerCallbackQuery"));
+});
+
+Deno.test("lançamento feito de madrugada em UTC é gravado no dia anterior (wall-clock de SP)", async () => {
+  const { ledger, registros } = ledgerFalso();
+  // 2026-09-05T02:00:00Z = 2026-09-04T23:00:00 em São Paulo (UTC-3): o dia
+  // muda em UTC antes de mudar em SP. Sem agoraLocal, a linha 79-80 comentada
+  // em bot.ts registraria isso como 05/09, um dia adiantado.
+  const { bot, chamadas } = montar(ledger, () => new Date("2026-09-05T02:00:00Z"));
+  await bot.handleUpdate(updCallback("n|S|5000", 777));
+
+  assertEquals(registros.length, 1);
+  assertEquals(registros[0].l.data.toISOString(), "2026-09-04T23:00:00.000Z");
+  assert(chamadas.some((c) => c.method === "editMessageText"));
 });
 
 Deno.test("reentrega do Telegram não gera segunda linha", async () => {
@@ -179,8 +196,11 @@ Deno.test("reentrega do Telegram não gera segunda linha", async () => {
   const { bot, chamadas } = montar(ledger);
   await bot.handleUpdate(updCallback("n|S|5000", 777));
 
-  assert(chamadas.some((c) => c.method === "answerCallbackQuery"));
-  assert(!chamadas.some((c) => c.method === "sendMessage"));
+  // Sequência exata: só o answerCallbackQuery. Se o guard `if (duplicado)
+  // return;` fosse removido, um editMessageText extra apareceria aqui — as
+  // duas asserções antigas (alguma answerCallbackQuery, nenhuma sendMessage)
+  // não rejeitariam isso, porque editMessageText não é sendMessage.
+  assertEquals(chamadas.map((c) => c.method), ["answerCallbackQuery"]);
 });
 
 Deno.test("callback_data corrompido não derruba o handler", async () => {
@@ -227,9 +247,9 @@ Deno.test("resposta ao marcador de descrição nunca é tratada como valor, mesm
   assertStringIncludes(String(chamadas[0].payload.text), "Descrição salva");
 });
 
-Deno.test("descrição longa é truncada em MAX_DESCRICAO antes de gravar", async () => {
+Deno.test("descrição longa é truncada em MAX_DESCRICAO antes de gravar, e o eco também vem clampado", async () => {
   const { ledger, descricoes } = ledgerFalso();
-  const { bot } = montar(ledger);
+  const { bot, chamadas } = montar(ledger);
   const textoLongo = "a".repeat(200);
   await bot.handleUpdate(
     updTexto(textoLongo, { reply_to_message: { text: "Qual foi o gasto? #42" } }),
@@ -239,4 +259,11 @@ Deno.test("descrição longa é truncada em MAX_DESCRICAO antes de gravar", asyn
   assertEquals(descricoes[0].linha, 42);
   assertEquals(descricoes[0].descricao.length, MAX_DESCRICAO);
   assertEquals(descricoes[0].descricao, "a".repeat(MAX_DESCRICAO));
+
+  // Se o eco levasse o texto bruto (200 chars), uma descrição perto do limite
+  // de 4096 do sendMessage estouraria depois que a linha já foi gravada — sem
+  // isso, o usuário fica sem confirmação de uma gravação que deu certo.
+  const texto = String(chamadas[0].payload.text);
+  assertStringIncludes(texto, "a".repeat(MAX_DESCRICAO));
+  assert(!texto.includes(textoLongo), "eco não deveria conter o texto bruto sem clamp");
 });

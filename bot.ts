@@ -44,6 +44,9 @@ export function criarBot(
     if (ctx.from && permitidos.has(ctx.from.id)) await next();
   });
 
+  // Novos bot.command(...) (ex.: /saldo, /extrato da Task 8) entram aqui, antes
+  // de "message:text" — senão o grammY encaminharia o comando para o parser de
+  // valor primeiro, e ele nunca chegaria ao handler do comando.
   bot.command(["start", "ajuda", "help"], (ctx) => responder(ctx, dicaUso()));
 
   bot.on("message:text", async (ctx) => {
@@ -55,8 +58,13 @@ export function criarBot(
     // marcador forjado/corrompido poderia produzir um número absurdo — o
     // caminho de callback já é protegido por decodeCallback, este não.
     if (linha !== null && Number.isSafeInteger(linha) && linha >= 2) {
-      await ledger.descrever(linha, clampDescricao(texto.trim()));
-      await ctx.reply(`✏️ Descrição salva: ${texto.trim()}`);
+      const descricao = clampDescricao(texto.trim());
+      await ledger.descrever(linha, descricao);
+      // Ecoa o valor JÁ clampado: se o eco levasse o texto bruto, uma
+      // descrição gigante estouraria o limite de 4096 chars do sendMessage
+      // depois que a linha já foi gravada — o usuário ficaria sem confirmação
+      // nenhuma de uma gravação que, na verdade, deu certo.
+      await ctx.reply(`✏️ Descrição salva: ${descricao}`);
       return;
     }
 
