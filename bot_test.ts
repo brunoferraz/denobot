@@ -88,6 +88,9 @@ export function montar(ledger: Ledger, agora: () => Date = () => new Date("2026-
   return { bot, chamadas };
 }
 
+const ultima = (cs: Chamada[], metodo: string) =>
+  [...cs].reverse().find((c) => c.method === metodo)!;
+
 export function updTexto(
   text: string,
   extra: Record<string, unknown> = {},
@@ -554,4 +557,61 @@ Deno.test("responder a pergunta de fonte grava a descrição igual à de gasto",
     },
   }));
   assertEquals(descricoes, [{ linha: 42, descricao: "salário" }]);
+});
+
+Deno.test("as tabelas saem com parse_mode HTML, e as demais mensagens sem", async () => {
+  // Sem propagar o parse_mode, o usuário veria "<pre>" literal na tela e
+  // nenhuma asserção de render.ts acusaria — o defeito mora no envio.
+  // o extrato precisa ter linhas: a mensagem de "nenhum lançamento" não é
+  // tabela e, corretamente, não leva parse_mode
+  const { ledger } = ledgerFalso({
+    extrato: () =>
+      Promise.resolve({
+        itens: [{
+          data: new Date("2026-09-04T12:00:00Z"),
+          tipo: "Saída" as const,
+          centavos: 5000,
+          descricao: "mercado",
+          quem: "Bruno",
+        }],
+        temMais: false,
+      }),
+  });
+  const { bot, chamadas } = montar(ledger);
+
+  await bot.handleUpdate(updTexto("/saldo", {
+    entities: [{ type: "bot_command", offset: 0, length: 6 }],
+  }));
+  assertEquals(ultima(chamadas, "sendMessage").payload.parse_mode, "HTML");
+
+  await bot.handleUpdate(updTexto("/extrato", {
+    entities: [{ type: "bot_command", offset: 0, length: 8 }],
+  }));
+  assertEquals(ultima(chamadas, "sendMessage").payload.parse_mode, "HTML");
+
+  await bot.handleUpdate(updTexto("bom dia"));
+  assertEquals(ultima(chamadas, "sendMessage").payload.parse_mode, undefined);
+});
+
+Deno.test("navegação de mês e paginação preservam o parse_mode ao editar", async () => {
+  const { ledger } = ledgerFalso({
+    extrato: () =>
+      Promise.resolve({
+        itens: [{
+          data: new Date("2026-09-04T12:00:00Z"),
+          tipo: "Entrada" as const,
+          centavos: 5000,
+          descricao: "salário",
+          quem: "Bruno",
+        }],
+        temMais: false,
+      }),
+  });
+  const { bot, chamadas } = montar(ledger);
+
+  await bot.handleUpdate(updCallback("m|2026-08"));
+  assertEquals(ultima(chamadas, "editMessageText").payload.parse_mode, "HTML");
+
+  await bot.handleUpdate(updCallback("x|10"));
+  assertEquals(ultima(chamadas, "editMessageText").payload.parse_mode, "HTML");
 });

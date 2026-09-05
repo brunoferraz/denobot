@@ -1,11 +1,30 @@
 import { type ErroValor, formatarBRL } from "./money.ts";
 import type { Lancamento, Saldo, TipoLancamento } from "./types.ts";
 import { encodeCallback } from "./callback.ts";
-import { ddMM, mesAnterior, mesPorExtenso, mesSeguinte } from "./tempo.ts";
+import { ddMM, mesAnterior, mesDe, mesPorExtenso, mesSeguinte } from "./tempo.ts";
 
 export interface Mensagem {
   text: string;
   reply_markup?: unknown;
+  /**
+   * Só as tabelas (saldo e extrato) usam. Elas vão dentro de <pre> porque em
+   * fonte proporcional — a que o Telegram usa em mensagem comum — nenhum
+   * padding alinha coluna: "Entradas" e "Líquido" têm o mesmo número de
+   * caracteres de preenchimento e larguras diferentes em pixels.
+   *
+   * Toda interpolação de texto do usuário nessas duas mensagens PRECISA passar
+   * por escaparHTML. As demais mensagens continuam sem parse_mode, que é o
+   * padrão seguro do projeto.
+   */
+  parse_mode?: "HTML";
+}
+
+/**
+ * Escapa o que o modo HTML do Telegram trata como marcação. São exatamente
+ * estes três caracteres — o & primeiro, senão ele reescaparia os outros.
+ */
+export function escaparHTML(texto: string): string {
+  return texto.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 export const PAGINA_EXTRATO = 10;
@@ -20,6 +39,15 @@ export const PAGINA_EXTRATO = 10;
  */
 export const MAX_DESCRICAO = 80;
 export const MAX_QUEM = 32;
+
+/**
+ * Larguras da tabela do extrato — menores que os limites de exibição gerais.
+ * Duas razões: coluna fixa é o que faz a tabela ser legível, e o escape de HTML
+ * pode quintuplicar um texto ("&" vira "&amp;"), o que estouraria o teto de
+ * 4096 caracteres do Telegram numa página cheia.
+ */
+export const COL_DESCRICAO = 24;
+export const COL_QUEM = 12;
 /**
  * O eco de `erroValor` existe só para mostrar o que o bot leu; 40 chars
  * bastam para reconhecer a própria entrada.
@@ -162,16 +190,35 @@ export function textoSaldo(s: Saldo): Mensagem {
   ]];
 
   return {
+    // <pre> é o que dá fonte monoespaçada: sem ela o padding não alinha nada,
+    // porque a fonte padrão do Telegram é proporcional. Nenhum texto do usuário
+    // entra aqui — só números e rótulos fixos —, então não há o que escapar.
     text: [
+      "<pre>",
       `📅 ${mesPorExtenso(s.mes)}`,
+      "",
       linha("Entradas", s.entradasCentavos),
       linha("Saídas", s.saidasCentavos),
       linha("Resultado", s.resultadoCentavos, ` ${SINAL(s.resultadoCentavos)}`),
       "",
       linha("Acumulado", s.acumuladoCentavos, ` ${SINAL(s.acumuladoCentavos)}`),
+      "</pre>",
     ].join("\n"),
+    parse_mode: "HTML",
     reply_markup: { inline_keyboard: teclado },
   };
+}
+
+/**
+ * Cabeçalho do extrato. A lista é "os mais recentes", não um mês fechado, então
+ * ela pode atravessar a virada — nesse caso o cabeçalho mostra o intervalo, em
+ * vez de mentir um mês só.
+ */
+function periodo(ls: Lancamento[]): string {
+  const meses = [...new Set(ls.map((l) => mesDe(l.data)))].sort();
+  const primeiro = mesPorExtenso(meses[0]);
+  const ultimo = mesPorExtenso(meses[meses.length - 1]);
+  return primeiro === ultimo ? ultimo : `${primeiro} – ${ultimo}`;
 }
 
 export function textoExtrato(ls: Lancamento[], offset: number, temMais: boolean): Mensagem {
@@ -181,10 +228,13 @@ export function textoExtrato(ls: Lancamento[], offset: number, temMais: boolean)
   // O corte vem antes da soma de propósito: o rodapé precisa falar das linhas
   // que estão na tela, não das que foram recebidas.
   const exibidos = ls.slice(0, PAGINA_EXTRATO);
+  // Colunas de largura fixa e texto do usuário ESCAPADO — nesta ordem: trunca
+  // primeiro (senão o corte partiria uma entidade como &amp; no meio), escapa
+  // depois, e só então preenche para a largura da coluna.
   const linhas = exibidos.map((l) =>
     `${ddMM(l.data)}  ${PONTO[l.tipo]} ${formatarBRL(l.centavos).padStart(10)}  ${
-      l.descricao ? truncar(l.descricao, MAX_DESCRICAO) : "—"
-    }  ·  ${truncar(l.quem, MAX_QUEM)}`
+      escaparHTML(l.descricao ? truncar(l.descricao, COL_DESCRICAO) : "—").padEnd(COL_DESCRICAO)
+    } · ${escaparHTML(truncar(l.quem, COL_QUEM))}`
   );
 
   const entradas = exibidos.reduce((t, l) => t + (l.tipo === "Entrada" ? l.centavos : 0), 0);
@@ -193,12 +243,17 @@ export function textoExtrato(ls: Lancamento[], offset: number, temMais: boolean)
 
   const msg: Mensagem = {
     text: [
+      "<pre>",
+      `📅 ${periodo(exibidos)}`,
+      "",
       ...linhas,
       "",
       linha("Entradas", entradas),
       linha("Saídas", saidas),
       linha("Líquido", liquido, ` ${SINAL(liquido)}`),
+      "</pre>",
     ].join("\n"),
+    parse_mode: "HTML",
   };
   if (temMais) {
     msg.reply_markup = {

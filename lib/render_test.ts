@@ -2,13 +2,16 @@ import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import type { Lancamento, Saldo } from "./types.ts";
 import { serialParaDate } from "./tempo.ts";
 import {
+  COL_DESCRICAO,
+  COL_QUEM,
   confirmacao,
+  dicaUso,
   erroValor,
+  escaparHTML,
   extrairLinha,
   linkWhatsApp,
   MAX_DESCRICAO,
   MAX_ENTRADA_ECO,
-  MAX_QUEM,
   PAGINA_EXTRATO,
   perguntaDescricao,
   perguntaTipo,
@@ -103,7 +106,10 @@ Deno.test("textoExtrato lista lançamentos e pagina só quando há mais", () => 
   const m = textoExtrato([lanc], 0, true);
   assertStringIncludes(m.text, "04/09");
   assertStringIncludes(m.text, "50,00");
-  assertStringIncludes(m.text, "pão & café");
+  // dentro de <pre>, o "&" do usuário vai escapado — é o que impede que um
+  // "<b>" na descrição vire marcação
+  assertStringIncludes(m.text, "pão &amp; café");
+  assert(!m.text.includes("pão & café"));
   const kb = (m.reply_markup as { inline_keyboard: { callback_data: string }[][] })
     .inline_keyboard;
   assertEquals(kb[0][0].callback_data, "x|10");
@@ -180,7 +186,9 @@ Deno.test("textoExtrato com dez linhas de descrição longa fica abaixo do limit
     () => ({ ...lanc, descricao: descricaoLonga }),
   );
   const m = textoExtrato(dez, 0, false);
-  assertStringIncludes(m.text, descricaoTruncada);
+  // a tabela usa COL_DESCRICAO, menor que MAX_DESCRICAO: coluna fixa é o que
+  // torna o extrato legível, e o escape de HTML pode quintuplicar o texto
+  assertStringIncludes(m.text, "a".repeat(COL_DESCRICAO) + "…");
   assert(
     m.text.length < 4096,
     `textoExtrato com 10 linhas produziu ${m.text.length} caracteres, limite do Telegram é 4096`,
@@ -199,8 +207,9 @@ Deno.test("textoExtrato com dez linhas de descrição E nome em emoji fica abaix
     () => ({ ...lanc, descricao: descricaoEmEmoji, quem: quemEmEmoji }),
   );
   const m = textoExtrato(dez, 0, false);
-  assertStringIncludes(m.text, "😀".repeat(MAX_DESCRICAO) + "…");
-  assertStringIncludes(m.text, "🎉".repeat(MAX_QUEM) + "…");
+  // na tabela valem as larguras de coluna, não os limites gerais de exibição
+  assertStringIncludes(m.text, "😀".repeat(COL_DESCRICAO) + "…");
+  assertStringIncludes(m.text, "🎉".repeat(COL_QUEM) + "…");
   assert(
     m.text.length < 4096,
     `textoExtrato com 10 linhas (descrição e nome em emoji) produziu ${m.text.length} caracteres, limite do Telegram é 4096`,
@@ -421,4 +430,74 @@ Deno.test("as colunas de total ficam alinhadas em saldo e extrato", () => {
   // e os valores terminam todos na mesma coluna (padStart faz o trabalho)
   const fimSaldo = s.map((c) => c.linha.replace(/ ?[➕➖]$/, "").length);
   assertEquals(new Set(fimSaldo).size, 1, "valores do saldo não terminam na mesma coluna");
+});
+
+Deno.test("as tabelas vão em <pre> com parse_mode HTML", () => {
+  const saldo = textoSaldo({
+    mes: "2026-09",
+    entradasCentavos: 1,
+    saidasCentavos: 0,
+    resultadoCentavos: 1,
+    acumuladoCentavos: 1,
+  });
+  assertEquals(saldo.parse_mode, "HTML");
+  assert(saldo.text.startsWith("<pre>") && saldo.text.endsWith("</pre>"));
+
+  const extrato = textoExtrato([lanc], 0, false);
+  assertEquals(extrato.parse_mode, "HTML");
+  assert(extrato.text.startsWith("<pre>") && extrato.text.endsWith("</pre>"));
+
+  // as demais mensagens continuam sem marcação: o <pre> é exceção, não regra
+  for (
+    const m of [perguntaTipo(100), perguntaDescricao(1), dicaUso(), erroValor("x1", "formato")]
+  ) {
+    assertEquals(m.parse_mode, undefined);
+  }
+});
+
+Deno.test("texto do usuário não vira marcação dentro do <pre>", () => {
+  const ataque = "<b>xxx</b> & </pre><i>fuga";
+  const m = textoExtrato([{ ...lanc, descricao: ataque, quem: "<u>Ana" }], 0, false);
+
+  // nenhuma tag do usuário sobrevive crua...
+  assert(!m.text.includes("<b>"), "tag <b> do usuário chegou crua");
+  assert(!m.text.includes("<i>"), "tag <i> do usuário chegou crua");
+  assert(!m.text.includes("<u>"), "tag <u> do usuário chegou crua");
+  // ...e o único </pre> é o nosso, no fim
+  assertEquals(m.text.split("</pre>").length - 1, 1);
+  assert(m.text.endsWith("</pre>"));
+  // o conteúdo continua legível, escapado
+  assertStringIncludes(m.text, "&lt;b&gt;xxx&lt;/b&gt; &amp;");
+});
+
+Deno.test("escaparHTML cobre exatamente os três caracteres do modo HTML", () => {
+  assertEquals(escaparHTML("a<b>c&d"), "a&lt;b&gt;c&amp;d");
+  // o & vem primeiro, senão reescaparia os outros
+  assertEquals(escaparHTML("&lt;"), "&amp;lt;");
+  assertEquals(escaparHTML("sem nada especial"), "sem nada especial");
+});
+
+Deno.test("o extrato traz o mês, e o intervalo quando atravessa a virada", () => {
+  const set = serialParaDate(46269); // 2026-09-04
+  const ago = serialParaDate(46262); // 2026-08-28
+
+  const umMes = textoExtrato([{ ...lanc, data: set }], 0, false);
+  assertStringIncludes(umMes.text, "📅 Setembro/2026");
+  assert(!umMes.text.includes("–"), "um mês só não deve virar intervalo");
+
+  const dois = textoExtrato([{ ...lanc, data: set }, { ...lanc, data: ago }], 0, false);
+  assertStringIncludes(dois.text, "📅 Agosto/2026 – Setembro/2026");
+});
+
+Deno.test("o saldo tem uma linha em branco entre o mês e os valores", () => {
+  const m = textoSaldo({
+    mes: "2026-09",
+    entradasCentavos: 1,
+    saidasCentavos: 0,
+    resultadoCentavos: 1,
+    acumuladoCentavos: 1,
+  });
+  const linhas = m.text.split("\n");
+  const iMes = linhas.findIndex((l) => l.includes("Setembro"));
+  assertEquals(linhas[iMes + 1], "", "falta a linha em branco depois do mês");
 });

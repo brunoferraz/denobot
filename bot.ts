@@ -193,7 +193,7 @@ export function criarBot(
     await ctx.answerCallbackQuery();
     if (cb?.tipo !== "m") return;
     const m = textoSaldo(await ledger.saldo(cb.mes));
-    await ctx.editMessageText(m.text, { reply_markup: m.reply_markup as never });
+    await ctx.editMessageText(m.text, opcoes(m) as never);
   });
 
   bot.callbackQuery(/^x\|/, async (ctx) => {
@@ -203,6 +203,7 @@ export function criarBot(
     const { itens, temMais } = await ledger.extrato(cb.offset, PAGINA_EXTRATO);
     const m = textoExtrato(itens, cb.offset, temMais);
     await ctx.editMessageText(m.text, {
+      ...opcoes(m),
       reply_markup: (m.reply_markup ?? { inline_keyboard: [] }) as never,
     });
   });
@@ -213,7 +214,15 @@ export function criarBot(
   return bot;
 }
 
+function opcoes(m: Mensagem): Record<string, unknown> {
+  const o: Record<string, unknown> = {};
+  if (m.reply_markup) o.reply_markup = m.reply_markup;
+  // Sem propagar o parse_mode, o "<pre>" das tabelas apareceria literal na tela.
+  if (m.parse_mode) o.parse_mode = m.parse_mode;
+  return o;
+}
+
 // deno-lint-ignore no-explicit-any
 function responder(ctx: any, m: Mensagem) {
-  return ctx.reply(m.text, m.reply_markup ? { reply_markup: m.reply_markup } : {});
+  return ctx.reply(m.text, opcoes(m));
 }
