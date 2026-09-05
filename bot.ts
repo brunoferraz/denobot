@@ -19,6 +19,11 @@ import {
   textoSaldo,
 } from "./lib/render.ts";
 
+const AVISO_FALHA_GENERICO =
+  "⚠️ não consegui falar com a planilha agora. Tenta de novo em instantes.";
+const AVISO_SHEETS_403 =
+  "⚠️ não consegui gravar: a planilha precisa estar compartilhada com o e-mail da service account, como Editor.";
+
 export interface DepsBot {
   token: string;
   permitidos: Set<number>;
@@ -42,29 +47,42 @@ export function criarBot(
 ): Bot {
   const bot = new Bot(token, botInfo ? { botInfo: botInfo as UserFromGetMe } : undefined);
 
+  // Quem não está na allowlist não recebe resposta alguma — nem um erro.
+  // Silêncio evita confirmar que o bot existe para quem descobriu o @.
+  bot.use(async (ctx, next) => {
+    if (ctx.from && permitidos.has(ctx.from.id)) await next();
+  });
+
   // `bot.handleUpdate` — chamado tanto pelo `webhookCallback` de produção
   // (ver main.ts) quanto pelos testes — apenas relança o erro de um handler
   // como uma Promise rejeitada; não existe laço interno de tratamento como o
   // de `bot.start()` (long polling). Sem este `bot.use`, uma falha do Sheets
   // nunca chegaria a avisar o usuário, e ele acharia que o lançamento foi
-  // gravado quando na verdade a exceção estourou sem resposta.
+  // gravado quando na verdade a exceção estourou sem resposta. Fica DEPOIS
+  // do gate de allowlist para que quem não está autorizado nunca dispare
+  // sequer este try/catch — "silêncio total" (spec §9) continua sendo uma
+  // propriedade estrutural da ordem de registro, não um acidente de quem foi
+  // registrado primeiro.
   bot.use(async (ctx, next) => {
     try {
       await next();
     } catch (err) {
       console.error("erro no handler:", err);
+      // bot.ts não importa ErroSheets (spec §3: bot.ts não sabe o que é o
+      // Google Sheets) — por isso o 403 é reconhecido por `name`/`status`
+      // duck-typed, sem importar a classe de lib/sheets.ts. É o único caso
+      // em que a mensagem genérica não basta: spec §8 exige nomear a causa
+      // quase certa (planilha não compartilhada com a service account).
+      const e = err as { name?: string; status?: number };
+      const aviso = e?.name === "ErroSheets" && e.status === 403
+        ? AVISO_SHEETS_403
+        : AVISO_FALHA_GENERICO;
       try {
-        await ctx.reply("⚠️ não consegui falar com a planilha agora. Tenta de novo em instantes.");
-      } catch (e) {
-        console.error("falhei até para avisar o usuário:", e);
+        await ctx.reply(aviso);
+      } catch (e2) {
+        console.error("falhei até para avisar o usuário:", e2);
       }
     }
-  });
-
-  // Quem não está na allowlist não recebe resposta alguma — nem um erro.
-  // Silêncio evita confirmar que o bot existe para quem descobriu o @.
-  bot.use(async (ctx, next) => {
-    if (ctx.from && permitidos.has(ctx.from.id)) await next();
   });
 
   // Novos bot.command(...) (ex.: /saldo, /extrato da Task 8) entram aqui, antes

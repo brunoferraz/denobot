@@ -3,6 +3,7 @@ import type { Update } from "grammy/types";
 import type { Ledger } from "./lib/ledger.ts";
 import type { Lancamento, Saldo } from "./lib/types.ts";
 import { MAX_DESCRICAO } from "./lib/render.ts";
+import { ErroSheets } from "./lib/sheets.ts";
 import { criarBot } from "./bot.ts";
 
 const BOT_INFO = {
@@ -428,4 +429,33 @@ Deno.test("falha do ledger vira aviso ao usuário, não exceção não tratada",
     chamadas.some((c) => String(c.payload.text ?? "").includes("não consegui")),
     "usuário precisa ser avisado da falha",
   );
+});
+
+Deno.test("ErroSheets 403 avisa explicitamente que a planilha precisa ser compartilhada com a service account", async () => {
+  const { ledger } = ledgerFalso({
+    registrar() {
+      return Promise.reject(new ErroSheets(403, "Sheets 403: The caller does not have permission"));
+    },
+  });
+  const { bot, chamadas } = montar(ledger);
+  await bot.handleUpdate(updCallback("n|S|5000"));
+
+  assert(
+    chamadas.some((c) => String(c.payload.text ?? "").includes("compartilhada")),
+    "spec §8: o 403 precisa nomear a causa quase certa (planilha não compartilhada)",
+  );
+});
+
+Deno.test("falha genérica (não-403) continua com a mensagem curta, sem o texto do 403", async () => {
+  const { ledger } = ledgerFalso({
+    registrar() {
+      return Promise.reject(new ErroSheets(500, "Sheets 500: internal error"));
+    },
+  });
+  const { bot, chamadas } = montar(ledger);
+  await bot.handleUpdate(updCallback("n|S|5000"));
+
+  const aviso = String(chamadas.find((c) => c.method === "sendMessage")?.payload.text ?? "");
+  assertStringIncludes(aviso, "não consegui falar com a planilha");
+  assert(!aviso.includes("compartilhada"), "só o 403 deveria citar a causa da service account");
 });
